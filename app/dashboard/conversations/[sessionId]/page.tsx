@@ -7,16 +7,43 @@ import { notFound, redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { db } from "@/db";
-import { tenantMembers } from "@/db/schema";
+import { datasets, tenantMembers } from "@/db/schema";
 import {
+  type BraintrustTurn,
   fetchBraintrustTurns,
   formatTurnText,
   getTurnTimestamp,
 } from "@/lib/braintrust-chat";
 import { formatRelativeTime } from "@/lib/utils";
 
+import { SaveToDatasetDialog } from "./save-to-dataset-dialog";
+
 interface ConversationDetailPageProps {
   params: Promise<{ sessionId: string }>;
+}
+
+// Build conversation history up to (and including) a specific turn
+function buildConversationHistory(
+  turns: BraintrustTurn[],
+  upToIndex: number,
+): { role: "user" | "assistant"; content: string }[] {
+  const history: { role: "user" | "assistant"; content: string }[] = [];
+
+  for (let i = 0; i <= upToIndex; i++) {
+    const turn = turns[i];
+    const userMsg = formatTurnText(turn.input);
+    const botMsg = formatTurnText(turn.output);
+
+    if (userMsg) {
+      history.push({ role: "user", content: userMsg });
+    }
+    if (botMsg && i < upToIndex) {
+      // Include bot response for all turns before the current one
+      history.push({ role: "assistant", content: botMsg });
+    }
+  }
+
+  return history;
 }
 
 export default async function ConversationDetailPage({
@@ -39,6 +66,12 @@ export default async function ConversationDetailPage({
   }
 
   const activeTenant = userTenants[0].tenant;
+
+  // Fetch datasets for this tenant
+  const tenantDatasets = await db.query.datasets.findMany({
+    where: eq(datasets.tenantId, activeTenant.id),
+    orderBy: (ds, { desc }) => [desc(ds.createdAt)],
+  });
 
   // Fetch all turns for this tenant and filter by sessionId
   const allTurns = await fetchBraintrustTurns({ tenantId: activeTenant.id });
@@ -76,7 +109,7 @@ export default async function ConversationDetailPage({
       </div>
 
       <div className="space-y-4">
-        {turns.map((turn) => {
+        {turns.map((turn, turnIndex) => {
           const userMessage = formatTurnText(turn.input);
           const botMessage = formatTurnText(turn.output);
 
@@ -108,10 +141,21 @@ export default async function ConversationDetailPage({
                   <Card className="flex-1 border-primary/20">
                     <CardContent className="py-3">
                       <p className="whitespace-pre-wrap text-sm">{botMessage}</p>
-                      <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
-                        <span>
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-xs text-muted-foreground">
                           {turn.modelProvider ?? "unknown"} · {turn.modelName ?? "n/a"}
                         </span>
+                        <SaveToDatasetDialog
+                          tenantId={activeTenant.id}
+                          sessionId={sessionId}
+                          turnId={turn.id}
+                          conversationHistory={buildConversationHistory(turns, turnIndex)}
+                          actualResponse={botMessage}
+                          datasets={tenantDatasets.map((d) => ({
+                            id: d.id,
+                            name: d.name,
+                          }))}
+                        />
                       </div>
                     </CardContent>
                   </Card>

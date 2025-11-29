@@ -292,6 +292,9 @@ export const traces = pgTable(
 // Dataset & Eval Tables
 // ============================================
 
+// Datasets are stored in Postgres for listing/metadata
+// Actual records are stored in a single Braintrust dataset "saved_conversations"
+// with metadata filtering by dataset_id
 export const datasets = pgTable(
   "datasets",
   {
@@ -310,26 +313,6 @@ export const datasets = pgTable(
     unique().on(ds.tenantId, ds.name),
     index("datasets_tenant_idx").on(ds.tenantId),
   ],
-);
-
-export const datasetExamples = pgTable(
-  "dataset_examples",
-  {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => nanoid()),
-    input: jsonb("input").notNull(),
-    expectedOutput: jsonb("expected_output").notNull(),
-    metadata: jsonb("metadata"),
-    tags: text("tags").array(),
-    datasetId: text("dataset_id")
-      .notNull()
-      .references(() => datasets.id, { onDelete: "cascade" }),
-    sourceTraceId: text("source_trace_id").references(() => traces.id),
-    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
-  },
-  (ex) => [index("dataset_examples_dataset_idx").on(ex.datasetId)],
 );
 
 export const evals = pgTable(
@@ -456,7 +439,6 @@ export const tracesRelations = relations(traces, ({ one, many }) => ({
     references: [conversations.id],
   }),
   messages: many(messages),
-  datasetExamples: many(datasetExamples),
 }));
 
 export const datasetsRelations = relations(datasets, ({ one, many }) => ({
@@ -464,19 +446,7 @@ export const datasetsRelations = relations(datasets, ({ one, many }) => ({
     fields: [datasets.tenantId],
     references: [tenants.id],
   }),
-  examples: many(datasetExamples),
   evals: many(evals),
-}));
-
-export const datasetExamplesRelations = relations(datasetExamples, ({ one }) => ({
-  dataset: one(datasets, {
-    fields: [datasetExamples.datasetId],
-    references: [datasets.id],
-  }),
-  sourceTrace: one(traces, {
-    fields: [datasetExamples.sourceTraceId],
-    references: [traces.id],
-  }),
 }));
 
 export const evalsRelations = relations(evals, ({ one }) => ({
@@ -505,5 +475,4 @@ export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
 export type Trace = typeof traces.$inferSelect;
 export type Dataset = typeof datasets.$inferSelect;
-export type DatasetExample = typeof datasetExamples.$inferSelect;
 export type Eval = typeof evals.$inferSelect;
