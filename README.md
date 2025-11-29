@@ -31,7 +31,7 @@ A multi-tenant, AI-powered customer support platform built with Next.js 16, feat
 - Node.js 20+
 - Clerk account (free at [clerk.com](https://clerk.com))
 - PostgreSQL with pgvector (optional for demo, required for full app)
-- At least one AI provider API key (OpenAI, Anthropic, or Google)
+- OpenAI API key for embeddings/evals (required) + any additional provider keys you plan to use
 - Braintrust API key (optional, for tracing)
 
 ### 1. Clone and Install
@@ -77,6 +77,9 @@ BRAINTRUST_API_KEY="bt_sk_..."
 # Use the numeric ID if available for faster BTQL queries, otherwise the name is used
 BRAINTRUST_PROJECT_ID="proj_123"
 BRAINTRUST_PROJECT_NAME="customer-support-platform"
+
+# OpenAI (required for document embeddings + evals)
+OPENAI_API_KEY="sk-..."
 ```
 
 ### Run PostgreSQL locally

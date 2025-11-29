@@ -29,6 +29,29 @@ export function UploadDocumentDialog({ tenantId, children }: UploadDocumentDialo
   const [isLoading, setIsLoading] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [fileError, setFileError] = useState<string | null>(null);
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    setFileError(null);
+
+    try {
+      const text = await file.text();
+      setContent(text);
+
+      if (!title) {
+        const inferredTitle = file.name.replace(/\.[^/.]+$/, "");
+        setTitle(inferredTitle);
+      }
+    } catch (error) {
+      console.error("Failed to read file:", error);
+      setFileError("Unable to read file. Please try again or paste the text manually.");
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,6 +110,22 @@ export function UploadDocumentDialog({ tenantId, children }: UploadDocumentDialo
                 required
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="file">Upload markdown file (optional)</Label>
+              <Input
+                id="file"
+                type="file"
+                accept=".md,.mdx,.markdown,.txt,.text"
+                onChange={handleFileUpload}
+                disabled={isLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                You can upload a markdown or text file. We'll automatically fill the
+                content editor below so you can review it before saving.
+              </p>
+              {fileError && <p className="text-xs text-destructive">{fileError}</p>}
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="content">Content (Markdown)</Label>
               <Textarea

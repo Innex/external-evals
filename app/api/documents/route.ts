@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/db";
-import { documentChunks, documents, tenantMembers, tenants } from "@/db/schema";
+import { documents, tenantMembers, tenants } from "@/db/schema";
 import { chunkText, getEmbeddings } from "@/lib/ai/embeddings";
 
 const createDocumentSchema = z.object({
@@ -58,32 +58,31 @@ export async function POST(request: Request): Promise<Response> {
     const apiKey = tenant?.openaiApiKey ?? process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
-      // Still create chunks without embeddings
-      for (let i = 0; i < chunks.length; i++) {
-        await db.insert(documentChunks).values({
-          documentId: document.id,
-          content: chunks[i],
-          chunkIndex: i,
-        });
-      }
-    } else {
-      const embeddings = await getEmbeddings(chunks, apiKey);
+      return NextResponse.json(
+        {
+          message:
+            "Missing OpenAI API key. Set OPENAI_API_KEY in your environment (or configure a tenant-level key) to enable document embeddings.",
+        },
+        { status: 400 },
+      );
+    }
 
-      // Create chunks with embeddings
-      for (let i = 0; i < chunks.length; i++) {
-        const escapedContent = chunks[i].replace(/'/g, "''");
-        await db.execute(`
-          INSERT INTO document_chunks (id, document_id, content, embedding, chunk_index, created_at)
-          VALUES (
-            gen_random_uuid()::text,
-            '${document.id}',
-            '${escapedContent}',
-            '[${embeddings[i].join(",")}]'::vector,
-            ${i},
-            NOW()
-          )
-        `);
-      }
+    const embeddings = await getEmbeddings(chunks, apiKey);
+
+    // Create chunks with embeddings
+    for (let i = 0; i < chunks.length; i++) {
+      const escapedContent = chunks[i].replace(/'/g, "''");
+      await db.execute(`
+        INSERT INTO document_chunks (id, document_id, content, embedding, chunk_index, created_at)
+        VALUES (
+          gen_random_uuid()::text,
+          '${document.id}',
+          '${escapedContent}',
+          '[${embeddings[i].join(",")}]'::vector,
+          ${i},
+          NOW()
+        )
+      `);
     }
 
     return NextResponse.json(document, { status: 201 });

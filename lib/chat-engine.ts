@@ -1,5 +1,6 @@
 import type { CoreMessage } from "ai";
 import { eq, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import { db } from "@/db";
 import type { tenants } from "@/db/schema";
@@ -26,7 +27,7 @@ interface Span {
 async function getRelevantContext(
   tenantId: string,
   query: string,
-  apiKey?: string,
+  apiKey: string,
 ): Promise<string> {
   if (!query) return "";
 
@@ -38,17 +39,28 @@ async function getRelevantContext(
       .select({
         content: documentChunks.content,
         similarity: sql<number>`1 - (${documentChunks.embedding} <=> ${embeddingStr}::vector)`,
+        title: documents.title,
       })
       .from(documentChunks)
       .innerJoin(documents, eq(documentChunks.documentId, documents.id))
       .where(eq(documents.tenantId, tenantId))
       .orderBy(sql`${documentChunks.embedding} <=> ${embeddingStr}::vector`)
-      .limit(3);
+      .limit(5);
 
-    return similarChunks
-      .filter((chunk) => chunk.similarity > 0.5)
-      .map((chunk) => chunk.content)
-      .join("\n\n---\n\n");
+    const relevant = similarChunks.filter((chunk) => chunk.similarity > 0.45);
+
+    if (relevant.length === 0) {
+      return "";
+    }
+
+    const formatted = relevant
+      .map(
+        (chunk, idx) =>
+          `Result ${idx + 1} — Source: ${chunk.title ?? "Untitled"}\nSimilarity: ${chunk.similarity.toFixed(3)}\n\n${chunk.content}`,
+      )
+      .join("\n\n-----\n\n");
+
+    return formatted;
   } catch (error) {
     console.error("Error getting context:", error);
     return "";
@@ -57,13 +69,14 @@ async function getRelevantContext(
 
 function buildSystemPrompt(
   instructions: string,
-  context: string,
+  hasKnowledgeTool: boolean,
   welcomeMessage: string,
 ): string {
   let prompt = instructions;
 
-  if (context) {
-    prompt += `\n\n## Relevant Context from Knowledge Base\n\nUse the following information to help answer the user's question:\n\n${context}\n\n---\n\nIf the context doesn't contain relevant information, you can still try to help based on your general knowledge, but let the user know if you're not certain.`;
+  if (hasKnowledgeTool) {
+    prompt +=
+      "\n\n## Knowledge Base Tool\nYou have access to a tool named `knowledgeBase`. When the user asks about product details, policies, troubleshooting steps, or anything that could be answered using uploaded documents, call this tool with a well-formed search query (usually the exact user question). The tool returns snippets from the knowledge base. Incorporate that information into your response, cite the source titles when possible, and if no relevant context is found, say so explicitly.";
   }
 
   prompt += `\n\n## Guidelines\n- Be helpful, friendly, and concise\n- If you don't know something, say so honestly\n- Your welcome message is: "${welcomeMessage}"`;
@@ -76,7 +89,7 @@ async function executeChatTurn<T>(
     runner: (args: {
       model: ReturnType<typeof getModel>;
       systemPrompt: string;
-      context: string;
+      tools: Record<string, unknown> | undefined;
       span: Span;
     }) => Promise<T>;
   },
@@ -107,20 +120,45 @@ async function executeChatTurn<T>(
         metadata: spanMetadata,
       });
 
-      const context = await getRelevantContext(
-        tenant.id,
-        userInput,
-        tenant.openaiApiKey ?? undefined,
-      );
+      const embeddingKey = tenant.openaiApiKey ?? process.env.OPENAI_API_KEY;
+
+      const tools =
+        embeddingKey !== undefined
+          ? {
+              knowledgeBase: {
+                description:
+                  "Search the tenant's uploaded documents for factual context related to the question.",
+                parameters: z.object({
+                  query: z
+                    .string()
+                    .describe("A precise natural-language question to search for."),
+                }),
+                execute: async ({ query }: { query: string }) => {
+                  const searchQuery = query.trim();
+                  const context = await getRelevantContext(
+                    tenant.id,
+                    searchQuery,
+                    embeddingKey,
+                  );
+
+                  if (!context) {
+                    return "No relevant context found in the knowledge base.";
+                  }
+
+                  return context;
+                },
+              },
+            }
+          : undefined;
 
       const systemPrompt = buildSystemPrompt(
         tenant.instructions,
-        context,
+        Boolean(tools?.knowledgeBase),
         tenant.welcomeMessage,
       );
 
       const model = getModel(tenant);
-      const result = await runner({ model, systemPrompt, context, span });
+      const result = await runner({ model, systemPrompt, tools, span });
 
       return result;
     },
@@ -135,20 +173,17 @@ export async function streamChatTurn(options: ChatTurnOptions) {
 
   return executeChatTurn({
     ...options,
-    runner: async ({ model, systemPrompt, context, span }) => {
+    runner: async ({ model, systemPrompt, tools, span }) => {
       return streamText({
         model,
         system: systemPrompt,
         messages,
+        tools,
         temperature: tenant.temperature,
-        maxTokens: 1024,
-        onFinish: async ({ text }) => {
-          span.log({
-            output: text,
-            metadata: {
-              hasContext: context.length > 0,
-            },
-          });
+        maxSteps: 5,
+        experimental_toolCallStreaming: true,
+        onFinish: async ({ text }: { text: string }) => {
+          span.log({ output: text });
         },
       });
     },
@@ -160,21 +195,17 @@ export async function completeChatTurn(options: ChatTurnOptions): Promise<string
 
   const result = await executeChatTurn({
     ...options,
-    runner: async ({ model, systemPrompt, context, span }) => {
+    runner: async ({ model, systemPrompt, tools, span }) => {
       const completion = await generateText({
         model,
         system: systemPrompt,
+        tools,
         messages,
         temperature: tenant.temperature,
-        maxTokens: 1024,
+        maxSteps: 5,
       });
 
-      span.log({
-        output: completion.text,
-        metadata: {
-          hasContext: context.length > 0,
-        },
-      });
+      span.log({ output: completion.text });
 
       return completion.text;
     },
