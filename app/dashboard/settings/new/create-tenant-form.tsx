@@ -1,12 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -14,8 +21,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { MODEL_OPTIONS } from "@/lib/ai/providers";
-import { Loader2 } from "lucide-react";
 import { slugify } from "@/lib/utils";
 
 interface CreateTenantFormProps {
@@ -27,10 +34,12 @@ export function CreateTenantForm({ userId }: CreateTenantFormProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
-  const [modelProvider, setModelProvider] = useState<"openai" | "anthropic" | "google">("openai");
-  const [modelName, setModelName] = useState("gpt-4o-mini");
+  const [modelProvider, setModelProvider] = useState<"openai" | "anthropic" | "google">(
+    "openai",
+  );
+  const [modelName, setModelName] = useState("gpt-5-mini");
   const [instructions, setInstructions] = useState(
-    "You are a helpful customer support assistant. Be friendly, concise, and helpful. If you don't know something, say so."
+    "You are a helpful customer support assistant. Be friendly, concise, and helpful. If you don't know something, say so.",
   );
   const [apiKey, setApiKey] = useState("");
 
@@ -162,8 +171,8 @@ export function CreateTenantForm({ userId }: CreateTenantFormProps) {
                 modelProvider === "openai"
                   ? "sk-..."
                   : modelProvider === "anthropic"
-                  ? "sk-ant-..."
-                  : "AI..."
+                    ? "sk-ant-..."
+                    : "AI..."
               }
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
@@ -204,9 +213,9 @@ export function CreateTenantForm({ userId }: CreateTenantFormProps) {
           Cancel
         </Button>
         <Button type="submit" disabled={isLoading}>
-            {isLoading ? (
+          {isLoading ? (
             <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Creating...
             </>
           ) : (
@@ -217,4 +226,3 @@ export function CreateTenantForm({ userId }: CreateTenantFormProps) {
     </form>
   );
 }
-

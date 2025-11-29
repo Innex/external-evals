@@ -1,8 +1,10 @@
-import { auth } from "@/lib/auth";
+import { currentUser } from "@clerk/nextjs/server";
+import { eq } from "drizzle-orm";
+import { notFound, redirect } from "next/navigation";
+
 import { db } from "@/db";
 import { tenantMembers, traces } from "@/db/schema";
-import { eq, and } from "drizzle-orm";
-import { notFound } from "next/navigation";
+
 import { TraceViewer } from "./trace-viewer";
 
 export default async function TraceDetailPage({
@@ -11,10 +13,14 @@ export default async function TraceDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const session = await auth();
+  const user = await currentUser();
+
+  if (!user) {
+    redirect("/sign-in");
+  }
 
   const userTenants = await db.query.tenantMembers.findMany({
-    where: eq(tenantMembers.userId, session!.user!.id!),
+    where: eq(tenantMembers.userId, user.id),
     with: { tenant: true },
   });
 
@@ -40,9 +46,8 @@ export default async function TraceDetailPage({
   }
 
   return (
-    <div className="container py-8 px-6 max-w-5xl">
+    <div className="container max-w-5xl px-6 py-8">
       <TraceViewer trace={trace} />
     </div>
   );
 }
-

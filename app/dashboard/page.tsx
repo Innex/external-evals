@@ -1,67 +1,139 @@
 import { currentUser } from "@clerk/nextjs/server";
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { 
-  MessageSquare, 
-  BarChart3, 
-  FileText, 
-  Plus,
+import { count, desc, eq } from "drizzle-orm";
+import {
+  AlertCircle,
   ArrowRight,
+  BarChart3,
+  FileText,
+  MessageSquare,
+  Plus,
   Sparkles,
-  AlertCircle
 } from "lucide-react";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 
-// Demo data for now - in production this would come from the database
-const DEMO_TENANT = {
-  id: "demo-tenant-id",
-  name: "Acme Support",
-  slug: "demo-support",
-};
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { db } from "@/db";
+import { conversations, documents, tenantMembers, traces, users } from "@/db/schema";
 
 export default async function DashboardPage() {
-  const user = await currentUser();
-  
-  if (!user) {
-    return <OnboardingView userName="there" />;
+  const clerkUser = await currentUser();
+
+  if (!clerkUser) {
+    redirect("/sign-in");
   }
 
-  // For demo purposes, show sample data
-  // In production, query the database for real tenant data
-  const activeTenant = DEMO_TENANT;
-  const conversationCount = 12;
-  const traceCount = 47;
-  const documentCount = 3;
-  const recentTraces = [
-    { id: "1", modelName: "gpt-4o-mini", createdAt: new Date(), input: { message: "How do I reset my password?" } },
-    { id: "2", modelName: "gpt-4o-mini", createdAt: new Date(Date.now() - 3600000), input: { message: "What are your pricing plans?" } },
-    { id: "3", modelName: "gpt-4o-mini", createdAt: new Date(Date.now() - 7200000), input: { message: "How do I contact support?" } },
-  ];
+  // Ensure user exists in our database
+  let dbUser = await db.query.users.findFirst({
+    where: eq(users.id, clerkUser.id),
+  });
+
+  if (!dbUser) {
+    const email = clerkUser.emailAddresses[0]?.emailAddress;
+    if (!email) {
+      throw new Error("User has no email address");
+    }
+
+    const [newUser] = await db
+      .insert(users)
+      .values({
+        id: clerkUser.id,
+        email,
+        name: clerkUser.fullName ?? clerkUser.firstName ?? "User",
+        image: clerkUser.imageUrl,
+        emailVerified: new Date(),
+      })
+      .returning();
+
+    dbUser = newUser;
+  }
+
+  // Get user's tenants
+  const userTenants = await db.query.tenantMembers.findMany({
+    where: eq(tenantMembers.userId, dbUser.id),
+    with: {
+      tenant: true,
+    },
+  });
+
+  // If no tenants, show onboarding
+  if (userTenants.length === 0) {
+    return <OnboardingView userName={dbUser.name ?? "there"} />;
+  }
+
+  // Get the first/active tenant
+  const activeTenant = userTenants[0].tenant;
+
+  // Get real counts from the database
+  const [conversationCountResult] = await db
+    .select({ count: count() })
+    .from(conversations)
+    .where(eq(conversations.tenantId, activeTenant.id));
+
+  const [traceCountResult] = await db
+    .select({ count: count() })
+    .from(traces)
+    .where(eq(traces.tenantId, activeTenant.id));
+
+  const [documentCountResult] = await db
+    .select({ count: count() })
+    .from(documents)
+    .where(eq(documents.tenantId, activeTenant.id));
+
+  const conversationCount = conversationCountResult?.count ?? 0;
+  const traceCount = traceCountResult?.count ?? 0;
+  const documentCount = documentCountResult?.count ?? 0;
+
+  // Get recent traces
+  const recentTraces = await db.query.traces.findMany({
+    where: eq(traces.tenantId, activeTenant.id),
+    orderBy: [desc(traces.createdAt)],
+    limit: 5,
+  });
+
+  // Check if API key is configured
+  const hasApiKey =
+    activeTenant.openaiApiKey ||
+    activeTenant.anthropicApiKey ||
+    activeTenant.googleApiKey;
 
   return (
-    <div className="container py-8 px-6 space-y-8">
-      {/* Demo mode banner */}
-      <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 flex items-start gap-3">
-        <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-        <div>
-          <p className="font-medium text-amber-700 dark:text-amber-400">Demo mode</p>
-          <p className="text-sm text-amber-600 dark:text-amber-500">
-            You&apos;re viewing sample data. To use the full app, set up a PostgreSQL database and add your API keys in settings.
-          </p>
+    <div className="container space-y-8 px-6 py-8">
+      {/* Show warning if no API key configured */}
+      {!hasApiKey && (
+        <div className="flex items-start gap-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-4">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+          <div>
+            <p className="font-medium text-amber-700 dark:text-amber-400">
+              API key required
+            </p>
+            <p className="text-sm text-amber-600 dark:text-amber-500">
+              Add your AI provider API key in{" "}
+              <Link href="/dashboard/settings" className="underline hover:no-underline">
+                settings
+              </Link>{" "}
+              to enable the chat widget.
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">{activeTenant.name}</h1>
-          <p className="text-muted-foreground">
-            Your AI support bot dashboard
-          </p>
+          <p className="text-muted-foreground">Your AI support bot dashboard</p>
         </div>
         <div className="flex items-center gap-3">
           <Link href={`/widget/${activeTenant.slug}`} target="_blank">
             <Button variant="outline" className="gap-2">
-              <MessageSquare className="w-4 h-4" />
+              <MessageSquare className="h-4 w-4" />
               Preview widget
             </Button>
           </Link>
@@ -77,21 +149,21 @@ export default async function DashboardPage() {
           title="Conversations"
           value={conversationCount}
           description="Total support conversations"
-          icon={<MessageSquare className="w-5 h-5" />}
+          icon={<MessageSquare className="h-5 w-5" />}
           href="/dashboard/conversations"
         />
         <StatCard
           title="Traces"
           value={traceCount}
           description="AI interactions logged"
-          icon={<BarChart3 className="w-5 h-5" />}
+          icon={<BarChart3 className="h-5 w-5" />}
           href="/dashboard/traces"
         />
         <StatCard
           title="Documents"
           value={documentCount}
           description="Knowledge base articles"
-          icon={<FileText className="w-5 h-5" />}
+          icon={<FileText className="h-5 w-5" />}
           href="/dashboard/documents"
         />
       </div>
@@ -106,29 +178,38 @@ export default async function DashboardPage() {
             </div>
             <Link href="/dashboard/traces">
               <Button variant="ghost" size="sm" className="gap-1">
-                View all <ArrowRight className="w-4 h-4" />
+                View all <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {recentTraces.map((trace) => (
-                <div
-                  key={trace.id}
-                  className="block p-3 rounded-lg border hover:bg-muted/50 transition-colors"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm font-medium">{trace.modelName}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(trace.createdAt).toLocaleString()}
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {JSON.stringify(trace.input).slice(0, 100)}
-                  </p>
-                </div>
-              ))}
-            </div>
+            {recentTraces.length === 0 ? (
+              <p className="py-8 text-center text-sm text-muted-foreground">
+                No traces yet. Start a conversation in the widget to see traces here.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {recentTraces.map((trace) => (
+                  <Link
+                    key={trace.id}
+                    href={`/dashboard/traces/${trace.id}`}
+                    className="block rounded-lg border p-3 transition-colors hover:bg-muted/50"
+                  >
+                    <div className="mb-1 flex items-center justify-between">
+                      <span className="text-sm font-medium">{trace.modelName}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(trace.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {typeof trace.input === "object"
+                        ? JSON.stringify(trace.input).slice(0, 100)
+                        : String(trace.input).slice(0, 100)}
+                    </p>
+                  </Link>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -139,15 +220,15 @@ export default async function DashboardPage() {
           </CardHeader>
           <CardContent>
             <div className="relative">
-              <pre className="p-4 rounded-lg bg-muted text-sm overflow-x-auto">
+              <pre className="overflow-x-auto rounded-lg bg-muted p-4 text-sm">
                 <code>{`<script 
-  src="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/widget.js"
+  src="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3001"}/widget.js"
   data-tenant="${activeTenant.slug}"
   async
 ></script>`}</code>
               </pre>
             </div>
-            <p className="text-xs text-muted-foreground mt-3">
+            <p className="mt-3 text-xs text-muted-foreground">
               Paste this code before the closing {`</body>`} tag on your website.
             </p>
           </CardContent>
@@ -157,22 +238,22 @@ export default async function DashboardPage() {
   );
 }
 
-function StatCard({ 
-  title, 
-  value, 
-  description, 
+function StatCard({
+  title,
+  value,
+  description,
   icon,
-  href 
-}: { 
-  title: string; 
-  value: number; 
+  href,
+}: {
+  title: string;
+  value: number;
   description: string;
   icon: React.ReactNode;
   href: string;
 }) {
   return (
     <Link href={href}>
-      <Card className="hover:shadow-md transition-shadow cursor-pointer">
+      <Card className="cursor-pointer transition-shadow hover:shadow-md">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <CardTitle className="text-sm font-medium text-muted-foreground">
             {title}
@@ -181,7 +262,7 @@ function StatCard({
         </CardHeader>
         <CardContent>
           <div className="text-3xl font-bold">{value.toLocaleString()}</div>
-          <p className="text-xs text-muted-foreground mt-1">{description}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
         </CardContent>
       </Card>
     </Link>
@@ -190,41 +271,43 @@ function StatCard({
 
 function OnboardingView({ userName }: { userName: string }) {
   return (
-    <div className="container py-16 px-6">
-      <div className="max-w-2xl mx-auto text-center space-y-8">
-        <div className="w-16 h-16 rounded-2xl animated-gradient flex items-center justify-center mx-auto">
-          <Sparkles className="w-8 h-8 text-white" />
+    <div className="container px-6 py-16">
+      <div className="mx-auto max-w-2xl space-y-6 text-center">
+        <div className="animated-gradient mx-auto flex h-16 w-16 items-center justify-center rounded-2xl">
+          <Sparkles className="h-8 w-8 text-white" />
         </div>
-        <div className="space-y-4">
+        <div className="space-y-3">
           <h1 className="text-4xl font-bold">Welcome, {userName}!</h1>
           <p className="text-xl text-muted-foreground">
             Let&apos;s create your first AI support bot. It only takes a few minutes.
           </p>
         </div>
-        <Link href="/dashboard/settings/new">
-          <Button size="lg" className="gap-2">
-            <Plus className="w-5 h-5" />
-            Create your first bot
-          </Button>
-        </Link>
-        <div className="pt-8 grid grid-cols-1 md:grid-cols-3 gap-4 text-left">
-          <div className="p-4 rounded-lg border">
-            <div className="text-2xl font-bold text-brand-500 mb-2">1</div>
-            <h3 className="font-medium mb-1">Configure</h3>
+        <div className="pt-2">
+          <Link href="/dashboard/settings/new">
+            <Button size="lg" className="gap-2">
+              <Plus className="h-5 w-5" />
+              Create your first bot
+            </Button>
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 gap-4 pt-8 text-left md:grid-cols-3">
+          <div className="rounded-lg border p-4">
+            <div className="mb-2 text-2xl font-bold text-brand-500">1</div>
+            <h3 className="mb-1 font-medium">Configure</h3>
             <p className="text-sm text-muted-foreground">
               Set up your bot&apos;s name, instructions, and AI provider
             </p>
           </div>
-          <div className="p-4 rounded-lg border">
-            <div className="text-2xl font-bold text-brand-500 mb-2">2</div>
-            <h3 className="font-medium mb-1">Add knowledge</h3>
+          <div className="rounded-lg border p-4">
+            <div className="mb-2 text-2xl font-bold text-brand-500">2</div>
+            <h3 className="mb-1 font-medium">Add knowledge</h3>
             <p className="text-sm text-muted-foreground">
               Upload documents to train your bot on your content
             </p>
           </div>
-          <div className="p-4 rounded-lg border">
-            <div className="text-2xl font-bold text-brand-500 mb-2">3</div>
-            <h3 className="font-medium mb-1">Deploy</h3>
+          <div className="rounded-lg border p-4">
+            <div className="mb-2 text-2xl font-bold text-brand-500">3</div>
+            <h3 className="mb-1 font-medium">Deploy</h3>
             <p className="text-sm text-muted-foreground">
               Embed the widget on your site and start helping customers
             </p>

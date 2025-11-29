@@ -1,9 +1,10 @@
+import { currentUser } from "@clerk/nextjs/server";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { db } from "@/db";
-import { documents, documentChunks, tenantMembers, tenants } from "@/db/schema";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
+
+import { db } from "@/db";
+import { documentChunks, documents, tenantMembers, tenants } from "@/db/schema";
 import { chunkText, getEmbeddings } from "@/lib/ai/embeddings";
 
 const createDocumentSchema = z.object({
@@ -12,23 +13,26 @@ const createDocumentSchema = z.object({
   content: z.string().min(1),
 });
 
-export async function POST(request: Request) {
+export async function POST(request: Request): Promise<Response> {
   try {
-    const session = await auth();
-    
-    if (!session?.user?.id) {
+    const user = await currentUser();
+
+    if (!user) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
+    const body: unknown = await request.json();
     const data = createDocumentSchema.parse(body);
 
     // Verify user has access to this tenant
     const member = await db.query.tenantMembers.findFirst({
-      where: eq(tenantMembers.userId, session.user.id),
+      where: and(
+        eq(tenantMembers.userId, user.id),
+        eq(tenantMembers.tenantId, data.tenantId),
+      ),
     });
 
-    if (!member || member.tenantId !== data.tenantId) {
+    if (!member) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
@@ -51,8 +55,8 @@ export async function POST(request: Request) {
     const chunks = chunkText(data.content);
 
     // Generate embeddings for all chunks
-    const apiKey = tenant?.openaiApiKey || process.env.OPENAI_API_KEY;
-    
+    const apiKey = tenant?.openaiApiKey ?? process.env.OPENAI_API_KEY;
+
     if (!apiKey) {
       // Still create chunks without embeddings
       for (let i = 0; i < chunks.length; i++) {
@@ -67,35 +71,32 @@ export async function POST(request: Request) {
 
       // Create chunks with embeddings
       for (let i = 0; i < chunks.length; i++) {
+        const escapedContent = chunks[i].replace(/'/g, "''");
         await db.execute(`
           INSERT INTO document_chunks (id, document_id, content, embedding, chunk_index, created_at)
           VALUES (
             gen_random_uuid()::text,
             '${document.id}',
-            $1,
+            '${escapedContent}',
             '[${embeddings[i].join(",")}]'::vector,
             ${i},
             NOW()
           )
-        `.replace('$1', `'${chunks[i].replace(/'/g, "''")}'`));
+        `);
       }
     }
 
     return NextResponse.json(document, { status: 201 });
   } catch (error) {
     console.error("Error creating document:", error);
-    
+
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { message: "Invalid data", errors: error.errors },
-        { status: 400 }
+        { status: 400 },
       );
     }
-    
-    return NextResponse.json(
-      { message: "Internal server error" },
-      { status: 500 }
-    );
+
+    return NextResponse.json({ message: "Internal server error" }, { status: 500 });
   }
 }
-

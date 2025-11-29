@@ -1,18 +1,18 @@
+import { relations } from "drizzle-orm";
 import {
+  boolean,
+  index,
+  integer,
+  jsonb,
+  pgEnum,
   pgTable,
+  primaryKey,
+  real,
   text,
   timestamp,
-  boolean,
-  integer,
-  real,
-  jsonb,
-  primaryKey,
-  index,
   unique,
-  pgEnum,
   vector,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
 import { nanoid } from "nanoid";
 
 // ============================================
@@ -20,17 +20,33 @@ import { nanoid } from "nanoid";
 // ============================================
 
 export const tenantRoleEnum = pgEnum("tenant_role", ["owner", "admin", "member"]);
-export const modelProviderEnum = pgEnum("model_provider", ["openai", "anthropic", "google"]);
-export const widgetPositionEnum = pgEnum("widget_position", ["bottom_right", "bottom_left", "top_right", "top_left"]);
+export const modelProviderEnum = pgEnum("model_provider", [
+  "openai",
+  "anthropic",
+  "google",
+]);
+export const widgetPositionEnum = pgEnum("widget_position", [
+  "bottom_right",
+  "bottom_left",
+  "top_right",
+  "top_left",
+]);
 export const messageRoleEnum = pgEnum("message_role", ["user", "assistant", "system"]);
-export const evalStatusEnum = pgEnum("eval_status", ["pending", "running", "completed", "failed"]);
+export const evalStatusEnum = pgEnum("eval_status", [
+  "pending",
+  "running",
+  "completed",
+  "failed",
+]);
 
 // ============================================
 // Auth Tables (NextAuth compatible)
 // ============================================
 
 export const users = pgTable("users", {
-  id: text("id").primaryKey().$defaultFn(() => nanoid()),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => nanoid()),
   name: text("name"),
   email: text("email").notNull().unique(),
   emailVerified: timestamp("email_verified", { mode: "date" }),
@@ -56,9 +72,7 @@ export const accounts = pgTable(
     id_token: text("id_token"),
     session_state: text("session_state"),
   },
-  (account) => [
-    primaryKey({ columns: [account.provider, account.providerAccountId] }),
-  ]
+  (account) => [primaryKey({ columns: [account.provider, account.providerAccountId] })],
 );
 
 export const sessions = pgTable("sessions", {
@@ -76,7 +90,7 @@ export const verificationTokens = pgTable(
     token: text("token").notNull(),
     expires: timestamp("expires", { mode: "date" }).notNull(),
   },
-  (vt) => [primaryKey({ columns: [vt.identifier, vt.token] })]
+  (vt) => [primaryKey({ columns: [vt.identifier, vt.token] })],
 );
 
 // ============================================
@@ -84,32 +98,38 @@ export const verificationTokens = pgTable(
 // ============================================
 
 export const tenants = pgTable("tenants", {
-  id: text("id").primaryKey().$defaultFn(() => nanoid()),
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => nanoid()),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
   description: text("description"),
-  
+
   // Visual configuration
   primaryColor: text("primary_color").default("#6366f1").notNull(),
   accentColor: text("accent_color").default("#8b5cf6").notNull(),
   logoUrl: text("logo_url"),
-  welcomeMessage: text("welcome_message").default("Hi! How can I help you today?").notNull(),
-  
+  welcomeMessage: text("welcome_message")
+    .default("Hi! How can I help you today?")
+    .notNull(),
+
   // AI Configuration
-  instructions: text("instructions").default("You are a helpful customer support assistant.").notNull(),
+  instructions: text("instructions")
+    .default("You are a helpful customer support assistant.")
+    .notNull(),
   modelProvider: modelProviderEnum("model_provider").default("openai").notNull(),
-  modelName: text("model_name").default("gpt-4o-mini").notNull(),
+  modelName: text("model_name").default("gpt-5-mini").notNull(),
   temperature: real("temperature").default(0.7).notNull(),
-  
+
   // API Keys (should be encrypted in production)
   openaiApiKey: text("openai_api_key"),
   anthropicApiKey: text("anthropic_api_key"),
   googleApiKey: text("google_api_key"),
-  
+
   // Widget settings
   widgetPosition: widgetPositionEnum("widget_position").default("bottom_right").notNull(),
   widgetEnabled: boolean("widget_enabled").default(true).notNull(),
-  
+
   createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
@@ -117,7 +137,9 @@ export const tenants = pgTable("tenants", {
 export const tenantMembers = pgTable(
   "tenant_members",
   {
-    id: text("id").primaryKey().$defaultFn(() => nanoid()),
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => nanoid()),
     role: tenantRoleEnum("role").default("member").notNull(),
     userId: text("user_id")
       .notNull()
@@ -132,7 +154,7 @@ export const tenantMembers = pgTable(
     unique().on(tm.userId, tm.tenantId),
     index("tenant_members_user_idx").on(tm.userId),
     index("tenant_members_tenant_idx").on(tm.tenantId),
-  ]
+  ],
 );
 
 // ============================================
@@ -142,7 +164,9 @@ export const tenantMembers = pgTable(
 export const documents = pgTable(
   "documents",
   {
-    id: text("id").primaryKey().$defaultFn(() => nanoid()),
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => nanoid()),
     title: text("title").notNull(),
     content: text("content").notNull(),
     metadata: jsonb("metadata"),
@@ -152,13 +176,15 @@ export const documents = pgTable(
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
   },
-  (doc) => [index("documents_tenant_idx").on(doc.tenantId)]
+  (doc) => [index("documents_tenant_idx").on(doc.tenantId)],
 );
 
 export const documentChunks = pgTable(
   "document_chunks",
   {
-    id: text("id").primaryKey().$defaultFn(() => nanoid()),
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => nanoid()),
     content: text("content").notNull(),
     embedding: vector("embedding", { dimensions: 1536 }),
     chunkIndex: integer("chunk_index").notNull(),
@@ -168,7 +194,7 @@ export const documentChunks = pgTable(
       .references(() => documents.id, { onDelete: "cascade" }),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
-  (chunk) => [index("document_chunks_document_idx").on(chunk.documentId)]
+  (chunk) => [index("document_chunks_document_idx").on(chunk.documentId)],
 );
 
 // ============================================
@@ -178,7 +204,9 @@ export const documentChunks = pgTable(
 export const conversations = pgTable(
   "conversations",
   {
-    id: text("id").primaryKey().$defaultFn(() => nanoid()),
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => nanoid()),
     sessionId: text("session_id").notNull(), // Anonymous session ID for end users
     metadata: jsonb("metadata"),
     tenantId: text("tenant_id")
@@ -190,13 +218,15 @@ export const conversations = pgTable(
   (conv) => [
     index("conversations_tenant_idx").on(conv.tenantId),
     index("conversations_session_idx").on(conv.sessionId),
-  ]
+  ],
 );
 
 export const messages = pgTable(
   "messages",
   {
-    id: text("id").primaryKey().$defaultFn(() => nanoid()),
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => nanoid()),
     role: messageRoleEnum("role").notNull(),
     content: text("content").notNull(),
     metadata: jsonb("metadata"),
@@ -206,7 +236,7 @@ export const messages = pgTable(
     traceId: text("trace_id").references(() => traces.id),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
-  (msg) => [index("messages_conversation_idx").on(msg.conversationId)]
+  (msg) => [index("messages_conversation_idx").on(msg.conversationId)],
 );
 
 // ============================================
@@ -216,36 +246,38 @@ export const messages = pgTable(
 export const traces = pgTable(
   "traces",
   {
-    id: text("id").primaryKey().$defaultFn(() => nanoid()),
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => nanoid()),
     braintrustId: text("braintrust_id"),
-    
+
     // Input/Output
     input: jsonb("input").notNull(),
     output: jsonb("output"),
     expectedOutput: jsonb("expected_output"), // For annotations
-    
+
     // Metadata
     modelProvider: modelProviderEnum("model_provider").notNull(),
     modelName: text("model_name").notNull(),
     promptTokens: integer("prompt_tokens"),
     completionTokens: integer("completion_tokens"),
     latencyMs: integer("latency_ms"),
-    
+
     // Scores and annotations
     scores: jsonb("scores"),
     metadata: jsonb("metadata"),
     tags: text("tags").array(),
-    
+
     // Annotation status
     isAnnotated: boolean("is_annotated").default(false).notNull(),
     annotatedAt: timestamp("annotated_at", { mode: "date" }),
     annotatedBy: text("annotated_by"),
-    
+
     tenantId: text("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
     conversationId: text("conversation_id").references(() => conversations.id),
-    
+
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
   },
@@ -253,7 +285,7 @@ export const traces = pgTable(
     index("traces_tenant_idx").on(trace.tenantId),
     index("traces_conversation_idx").on(trace.conversationId),
     index("traces_braintrust_idx").on(trace.braintrustId),
-  ]
+  ],
 );
 
 // ============================================
@@ -263,7 +295,9 @@ export const traces = pgTable(
 export const datasets = pgTable(
   "datasets",
   {
-    id: text("id").primaryKey().$defaultFn(() => nanoid()),
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => nanoid()),
     name: text("name").notNull(),
     description: text("description"),
     tenantId: text("tenant_id")
@@ -275,13 +309,15 @@ export const datasets = pgTable(
   (ds) => [
     unique().on(ds.tenantId, ds.name),
     index("datasets_tenant_idx").on(ds.tenantId),
-  ]
+  ],
 );
 
 export const datasetExamples = pgTable(
   "dataset_examples",
   {
-    id: text("id").primaryKey().$defaultFn(() => nanoid()),
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => nanoid()),
     input: jsonb("input").notNull(),
     expectedOutput: jsonb("expected_output").notNull(),
     metadata: jsonb("metadata"),
@@ -293,31 +329,33 @@ export const datasetExamples = pgTable(
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
   },
-  (ex) => [index("dataset_examples_dataset_idx").on(ex.datasetId)]
+  (ex) => [index("dataset_examples_dataset_idx").on(ex.datasetId)],
 );
 
 export const evals = pgTable(
   "evals",
   {
-    id: text("id").primaryKey().$defaultFn(() => nanoid()),
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => nanoid()),
     name: text("name").notNull(),
     status: evalStatusEnum("status").default("pending").notNull(),
-    
+
     // Parameters at time of eval
     parameters: jsonb("parameters").notNull(), // instructions, model, temperature, etc.
-    
+
     // Results
     results: jsonb("results"),
     summary: jsonb("summary"),
     braintrustExpId: text("braintrust_exp_id"), // Braintrust experiment ID
-    
+
     tenantId: text("tenant_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
     datasetId: text("dataset_id")
       .notNull()
       .references(() => datasets.id),
-    
+
     startedAt: timestamp("started_at", { mode: "date" }),
     completedAt: timestamp("completed_at", { mode: "date" }),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
@@ -326,7 +364,7 @@ export const evals = pgTable(
   (ev) => [
     index("evals_tenant_idx").on(ev.tenantId),
     index("evals_dataset_idx").on(ev.datasetId),
-  ]
+  ],
 );
 
 // ============================================
@@ -469,4 +507,3 @@ export type Trace = typeof traces.$inferSelect;
 export type Dataset = typeof datasets.$inferSelect;
 export type DatasetExample = typeof datasetExamples.$inferSelect;
 export type Eval = typeof evals.$inferSelect;
-

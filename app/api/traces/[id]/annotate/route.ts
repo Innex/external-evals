@@ -1,22 +1,24 @@
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { currentUser } from "@clerk/nextjs/server";
+import { and, eq } from "drizzle-orm";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+
 import { db } from "@/db";
-import { traces, tenantMembers } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { tenantMembers, traces } from "@/db/schema";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
   try {
     const { id } = await params;
-    const session = await auth();
-    
-    if (!session?.user?.id) {
+    const user = await currentUser();
+
+    if (!user) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
+    const body = (await request.json()) as { expectedOutput?: unknown };
     const { expectedOutput } = body;
 
     // Get trace
@@ -30,10 +32,13 @@ export async function POST(
 
     // Verify user has access to this tenant
     const member = await db.query.tenantMembers.findFirst({
-      where: eq(tenantMembers.userId, session.user.id),
+      where: and(
+        eq(tenantMembers.userId, user.id),
+        eq(tenantMembers.tenantId, trace.tenantId),
+      ),
     });
 
-    if (!member || member.tenantId !== trace.tenantId) {
+    if (!member) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
@@ -44,7 +49,7 @@ export async function POST(
         expectedOutput,
         isAnnotated: true,
         annotatedAt: new Date(),
-        annotatedBy: session.user.id,
+        annotatedBy: user.id,
         updatedAt: new Date(),
       })
       .where(eq(traces.id, id));
@@ -52,10 +57,6 @@ export async function POST(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error annotating trace:", error);
-    return NextResponse.json(
-      { message: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ message: "Internal server error" }, { status: 500 });
   }
 }
-

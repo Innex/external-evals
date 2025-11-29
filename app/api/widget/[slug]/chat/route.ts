@@ -1,13 +1,20 @@
-import { NextRequest } from "next/server";
-import { db } from "@/db";
-import { tenants, conversations, messages, traces, documentChunks, documents } from "@/db/schema";
-import { eq, sql, and, desc } from "drizzle-orm";
-import { streamText, type CoreMessage } from "ai";
-import { getModel } from "@/lib/ai/providers";
-import { getEmbedding } from "@/lib/ai/embeddings";
-import { initLogger, wrapAISDK, traced } from "braintrust";
+import { type CoreMessage } from "ai";
 import * as ai from "ai";
-import { nanoid } from "nanoid";
+import { initLogger, wrapAISDK } from "braintrust";
+import { and, eq, sql } from "drizzle-orm";
+import type { NextRequest } from "next/server";
+
+import { db } from "@/db";
+import {
+  conversations,
+  documentChunks,
+  documents,
+  messages,
+  tenants,
+  traces,
+} from "@/db/schema";
+import { getEmbedding } from "@/lib/ai/embeddings";
+import { getModel } from "@/lib/ai/providers";
 
 // Initialize Braintrust
 if (process.env.BRAINTRUST_API_KEY) {
@@ -17,18 +24,21 @@ if (process.env.BRAINTRUST_API_KEY) {
   });
 }
 
+// Wrap AI SDK for automatic tracing
+const { streamText } = wrapAISDK(ai);
+
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ slug: string }> }
-) {
+  { params }: { params: Promise<{ slug: string }> },
+): Promise<Response> {
   const { slug } = await params;
 
   try {
-    const body = await request.json();
-    const { messages: chatMessages, sessionId } = body as {
+    const body = (await request.json()) as {
       messages: CoreMessage[];
       sessionId: string;
     };
+    const { messages: chatMessages, sessionId } = body;
 
     // Get tenant
     const tenant = await db.query.tenants.findFirst({
@@ -47,7 +57,7 @@ export async function POST(
     let conversation = await db.query.conversations.findFirst({
       where: and(
         eq(conversations.tenantId, tenant.id),
-        eq(conversations.sessionId, sessionId)
+        eq(conversations.sessionId, sessionId),
       ),
     });
 
@@ -62,82 +72,40 @@ export async function POST(
     }
 
     // Get the last user message for context retrieval
-    const lastUserMessage = chatMessages
-      .filter((m) => m.role === "user")
-      .pop();
+    const lastUserMessage = chatMessages.filter((m) => m.role === "user").pop();
 
     // Retrieve relevant context from documents
     let context = "";
     if (lastUserMessage && typeof lastUserMessage.content === "string") {
-      context = await getRelevantContext(tenant.id, lastUserMessage.content, tenant.openaiApiKey || undefined);
+      context = await getRelevantContext(
+        tenant.id,
+        lastUserMessage.content,
+        tenant.openaiApiKey ?? undefined,
+      );
     }
 
     // Build system prompt
-    const systemPrompt = buildSystemPrompt(tenant.instructions, context, tenant.welcomeMessage);
+    const systemPrompt = buildSystemPrompt(
+      tenant.instructions,
+      context,
+      tenant.welcomeMessage,
+    );
 
     // Get the AI model
     const model = getModel(tenant);
 
-    // Wrap AI SDK for Braintrust tracing
-    const { streamText: tracedStreamText } = wrapAISDK(ai);
-
     // Track start time
     const startTime = Date.now();
 
-    // Create the stream with tracing
-    const result = await traced(
-      async () => {
-        return tracedStreamText({
-          model,
-          system: systemPrompt,
-          messages: chatMessages,
-          temperature: tenant.temperature,
-          maxTokens: 1024,
-          onFinish: async ({ text, usage }) => {
-            const latencyMs = Date.now() - startTime;
-
-            // Save user message
-            if (lastUserMessage && typeof lastUserMessage.content === "string") {
-              await db.insert(messages).values({
-                conversationId: conversation!.id,
-                role: "user",
-                content: lastUserMessage.content,
-              });
-            }
-
-            // Create trace record
-            const [trace] = await db
-              .insert(traces)
-              .values({
-                tenantId: tenant.id,
-                conversationId: conversation!.id,
-                modelProvider: tenant.modelProvider,
-                modelName: tenant.modelName,
-                input: { messages: chatMessages, context },
-                output: { text },
-                promptTokens: usage?.promptTokens,
-                completionTokens: usage?.completionTokens,
-                latencyMs,
-                metadata: {
-                  sessionId,
-                  instructions: tenant.instructions,
-                  temperature: tenant.temperature,
-                },
-              })
-              .returning();
-
-            // Save assistant message
-            await db.insert(messages).values({
-              conversationId: conversation!.id,
-              role: "assistant",
-              content: text,
-              traceId: trace.id,
-            });
-          },
-        });
-      },
-      {
-        name: "chat-completion",
+    // Create the stream (wrapAISDK automatically traces this)
+    const result = await streamText({
+      model,
+      system: systemPrompt,
+      messages: chatMessages,
+      temperature: tenant.temperature,
+      maxTokens: 1024,
+      experimental_telemetry: {
+        isEnabled: true,
         metadata: {
           tenantId: tenant.id,
           tenantSlug: tenant.slug,
@@ -145,24 +113,77 @@ export async function POST(
           modelProvider: tenant.modelProvider,
           modelName: tenant.modelName,
         },
-      }
-    )();
+      },
+      onFinish: async ({ text, usage }) => {
+        const latencyMs = Date.now() - startTime;
+
+        // Save user message
+        if (lastUserMessage && typeof lastUserMessage.content === "string") {
+          await db.insert(messages).values({
+            conversationId: conversation.id,
+            role: "user",
+            content: lastUserMessage.content,
+          });
+        }
+
+        // Create trace record (handle NaN/undefined token counts)
+        const promptTokens = usage?.promptTokens;
+        const completionTokens = usage?.completionTokens;
+
+        const [trace] = await db
+          .insert(traces)
+          .values({
+            tenantId: tenant.id,
+            conversationId: conversation.id,
+            modelProvider: tenant.modelProvider,
+            modelName: tenant.modelName,
+            input: { messages: chatMessages, context },
+            output: { text },
+            promptTokens:
+              typeof promptTokens === "number" && !Number.isNaN(promptTokens)
+                ? promptTokens
+                : null,
+            completionTokens:
+              typeof completionTokens === "number" && !Number.isNaN(completionTokens)
+                ? completionTokens
+                : null,
+            latencyMs:
+              typeof latencyMs === "number" && !Number.isNaN(latencyMs)
+                ? latencyMs
+                : null,
+            metadata: {
+              sessionId,
+              instructions: tenant.instructions,
+              temperature: tenant.temperature,
+            },
+          })
+          .returning();
+
+        // Save assistant message
+        await db.insert(messages).values({
+          conversationId: conversation.id,
+          role: "assistant",
+          content: text,
+          traceId: trace.id,
+        });
+      },
+    });
 
     // Return streaming response
     return result.toDataStreamResponse();
   } catch (error) {
     console.error("Chat error:", error);
-    return new Response(
-      JSON.stringify({ error: "Failed to process chat" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ error: "Failed to process chat" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }
 
 async function getRelevantContext(
   tenantId: string,
   query: string,
-  apiKey?: string
+  apiKey?: string,
 ): Promise<string> {
   try {
     // Get query embedding
@@ -200,7 +221,7 @@ async function getRelevantContext(
 function buildSystemPrompt(
   instructions: string,
   context: string,
-  welcomeMessage: string
+  welcomeMessage: string,
 ): string {
   let prompt = instructions;
 
@@ -214,7 +235,7 @@ function buildSystemPrompt(
 }
 
 // Handle OPTIONS for CORS
-export async function OPTIONS() {
+export function OPTIONS(): Response {
   return new Response(null, {
     status: 200,
     headers: {
@@ -224,4 +245,3 @@ export async function OPTIONS() {
     },
   });
 }
-

@@ -1,25 +1,31 @@
-import { auth } from "@/lib/auth";
-import { db } from "@/db";
-import { tenantMembers, evals, datasets } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { currentUser } from "@clerk/nextjs/server";
+import { desc, eq } from "drizzle-orm";
+import { CheckCircle, Clock, FlaskConical, Loader2, Play, XCircle } from "lucide-react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { redirect } from "next/navigation";
+
 import { Badge } from "@/components/ui/badge";
-import { formatRelativeTime, formatDateTime } from "@/lib/utils";
-import { FlaskConical, Play, CheckCircle, XCircle, Clock, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { db } from "@/db";
+import { datasets, evals, tenantMembers } from "@/db/schema";
+import { formatRelativeTime } from "@/lib/utils";
 
 export default async function EvalsPage() {
-  const session = await auth();
-  
+  const user = await currentUser();
+
+  if (!user) {
+    redirect("/sign-in");
+  }
+
   const userTenants = await db.query.tenantMembers.findMany({
-    where: eq(tenantMembers.userId, session!.user!.id!),
+    where: eq(tenantMembers.userId, user.id),
     with: { tenant: true },
   });
 
   if (userTenants.length === 0) {
     return (
-      <div className="container py-8 px-6">
+      <div className="container px-6 py-8">
         <p className="text-muted-foreground">Create a bot first to run evaluations.</p>
       </div>
     );
@@ -44,7 +50,7 @@ export default async function EvalsPage() {
   const hasDatasets = tenantDatasets.length > 0;
 
   return (
-    <div className="container py-8 px-6 space-y-6">
+    <div className="container space-y-6 px-6 py-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Evaluations</h1>
@@ -55,7 +61,7 @@ export default async function EvalsPage() {
         {hasDatasets && (
           <Link href="/dashboard/evals/new">
             <Button>
-              <Play className="w-4 h-4 mr-2" />
+              <Play className="mr-2 h-4 w-4" />
               Run evaluation
             </Button>
           </Link>
@@ -65,17 +71,17 @@ export default async function EvalsPage() {
       {allEvals.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <FlaskConical className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="font-semibold text-lg mb-2">No evaluations yet</h3>
-            <p className="text-muted-foreground mb-4">
-              {hasDatasets 
+            <FlaskConical className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+            <h3 className="mb-2 text-lg font-semibold">No evaluations yet</h3>
+            <p className="mb-4 text-muted-foreground">
+              {hasDatasets
                 ? "Run your first evaluation to measure your bot's performance."
                 : "Create a dataset first by annotating traces, then run evaluations."}
             </p>
             {hasDatasets ? (
               <Link href="/dashboard/evals/new">
                 <Button>
-                  <Play className="w-4 h-4 mr-2" />
+                  <Play className="mr-2 h-4 w-4" />
                   Run first evaluation
                 </Button>
               </Link>
@@ -90,7 +96,7 @@ export default async function EvalsPage() {
         <div className="space-y-4">
           {allEvals.map((evalRun) => (
             <Link key={evalRun.id} href={`/dashboard/evals/${evalRun.id}`}>
-              <Card className="hover:shadow-md transition-shadow cursor-pointer">
+              <Card className="cursor-pointer transition-shadow hover:shadow-md">
                 <CardContent className="py-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
@@ -106,20 +112,24 @@ export default async function EvalsPage() {
                     </div>
                     <div className="text-right">
                       <StatusBadge status={evalRun.status} />
-                      <p className="text-xs text-muted-foreground mt-1">
+                      <p className="mt-1 text-xs text-muted-foreground">
                         {formatRelativeTime(evalRun.createdAt)}
                       </p>
                     </div>
                   </div>
                   {evalRun.summary && (
-                    <div className="mt-3 pt-3 border-t">
+                    <div className="mt-3 border-t pt-3">
                       <div className="grid grid-cols-3 gap-4 text-sm">
-                        {Object.entries(evalRun.summary as Record<string, number>).map(([key, value]) => (
-                          <div key={key}>
-                            <p className="text-muted-foreground capitalize">{key}</p>
-                            <p className="font-medium">{typeof value === 'number' ? value.toFixed(2) : value}</p>
-                          </div>
-                        ))}
+                        {Object.entries(evalRun.summary as Record<string, number>).map(
+                          ([key, value]) => (
+                            <div key={key}>
+                              <p className="capitalize text-muted-foreground">{key}</p>
+                              <p className="font-medium">
+                                {typeof value === "number" ? value.toFixed(2) : value}
+                              </p>
+                            </div>
+                          ),
+                        )}
                       </div>
                     </div>
                   )}
@@ -136,13 +146,13 @@ export default async function EvalsPage() {
 function StatusIcon({ status }: { status: string }) {
   switch (status) {
     case "completed":
-      return <CheckCircle className="w-6 h-6 text-green-500" />;
+      return <CheckCircle className="h-6 w-6 text-green-500" />;
     case "failed":
-      return <XCircle className="w-6 h-6 text-red-500" />;
+      return <XCircle className="h-6 w-6 text-red-500" />;
     case "running":
-      return <Loader2 className="w-6 h-6 text-blue-500 animate-spin" />;
+      return <Loader2 className="h-6 w-6 animate-spin text-blue-500" />;
     default:
-      return <Clock className="w-6 h-6 text-yellow-500" />;
+      return <Clock className="h-6 w-6 text-yellow-500" />;
   }
 }
 
@@ -154,10 +164,5 @@ function StatusBadge({ status }: { status: string }) {
     pending: "outline",
   };
 
-  return (
-    <Badge variant={variants[status] || "outline"}>
-      {status}
-    </Badge>
-  );
+  return <Badge variant={variants[status] ?? "outline"}>{status}</Badge>;
 }
-

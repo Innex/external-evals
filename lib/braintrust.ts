@@ -1,12 +1,12 @@
-import { initLogger, wrapAISDK, traced } from "braintrust";
 import * as ai from "ai";
+import { initLogger, traced, wrapAISDK } from "braintrust";
 
 // Initialize Braintrust logger with platform-level API key
 let isInitialized = false;
 
 export function initBraintrust() {
   if (isInitialized) return;
-  
+
   if (process.env.BRAINTRUST_API_KEY) {
     initLogger({
       projectName: process.env.BRAINTRUST_PROJECT_NAME || "customer-support-platform",
@@ -26,7 +26,11 @@ export function getWrappedAI() {
 export { traced };
 
 // Helper to create tenant-specific metadata for traces
-export function createTenantMetadata(tenantId: string, tenantSlug: string, additionalMetadata?: Record<string, unknown>) {
+export function createTenantMetadata(
+  tenantId: string,
+  tenantSlug: string,
+  additionalMetadata?: Record<string, unknown>,
+) {
   return {
     tenantId,
     tenantSlug,
@@ -39,14 +43,16 @@ export async function logEvent(
   eventName: string,
   input: Record<string, unknown>,
   output?: Record<string, unknown>,
-  metadata?: Record<string, unknown>
+  metadata?: Record<string, unknown>,
 ) {
   initBraintrust();
-  
-  return traced(async () => {
-    return { input, output, metadata };
-  }, {
-    name: eventName,
-  })();
-}
 
+  return traced(
+    async () => {
+      return { input, output, metadata };
+    },
+    {
+      name: eventName,
+    },
+  )();
+}

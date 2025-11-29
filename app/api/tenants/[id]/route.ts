@@ -1,9 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { db } from "@/db";
-import { tenants, tenantMembers } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { currentUser } from "@clerk/nextjs/server";
+import { and, eq } from "drizzle-orm";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { z } from "zod";
+
+import { db } from "@/db";
+import { tenantMembers, tenants } from "@/db/schema";
 
 const updateTenantSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -15,30 +17,33 @@ const updateTenantSchema = z.object({
   primaryColor: z.string().optional(),
   accentColor: z.string().optional(),
   widgetEnabled: z.boolean().optional(),
+  openaiApiKey: z.string().optional(),
+  anthropicApiKey: z.string().optional(),
+  googleApiKey: z.string().optional(),
 });
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
   try {
     const { id } = await params;
-    const session = await auth();
-    
-    if (!session?.user?.id) {
+    const user = await currentUser();
+
+    if (!user) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
     // Verify user has access to this tenant
     const member = await db.query.tenantMembers.findFirst({
-      where: eq(tenantMembers.userId, session.user.id),
+      where: and(eq(tenantMembers.userId, user.id), eq(tenantMembers.tenantId, id)),
     });
 
-    if (!member || member.tenantId !== id) {
+    if (!member) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
+    const body: unknown = await request.json();
     const data = updateTenantSchema.parse(body);
 
     // Update tenant
@@ -54,30 +59,27 @@ export async function PATCH(
     return NextResponse.json(updated);
   } catch (error) {
     console.error("Error updating tenant:", error);
-    
+
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { message: "Invalid data", errors: error.errors },
-        { status: 400 }
+        { status: 400 },
       );
     }
-    
-    return NextResponse.json(
-      { message: "Internal server error" },
-      { status: 500 }
-    );
+
+    return NextResponse.json({ message: "Internal server error" }, { status: 500 });
   }
 }
 
 export async function GET(
-  request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
   try {
     const { id } = await params;
-    const session = await auth();
-    
-    if (!session?.user?.id) {
+    const user = await currentUser();
+
+    if (!user) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
@@ -91,20 +93,16 @@ export async function GET(
 
     // Verify user has access
     const member = await db.query.tenantMembers.findFirst({
-      where: eq(tenantMembers.userId, session.user.id),
+      where: and(eq(tenantMembers.userId, user.id), eq(tenantMembers.tenantId, id)),
     });
 
-    if (!member || member.tenantId !== id) {
+    if (!member) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
     return NextResponse.json(tenant);
   } catch (error) {
     console.error("Error fetching tenant:", error);
-    return NextResponse.json(
-      { message: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ message: "Internal server error" }, { status: 500 });
   }
 }
-

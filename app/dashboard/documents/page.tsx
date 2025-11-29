@@ -1,25 +1,37 @@
-import { auth } from "@/lib/auth";
-import { db } from "@/db";
-import { tenantMembers, documents } from "@/db/schema";
-import { eq, desc, count } from "drizzle-orm";
-import Link from "next/link";
+import { currentUser } from "@clerk/nextjs/server";
+import { desc, eq } from "drizzle-orm";
+import { FileText, Upload } from "lucide-react";
+import { redirect } from "next/navigation";
+
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { db } from "@/db";
+import { documents, tenantMembers } from "@/db/schema";
 import { formatRelativeTime, truncate } from "@/lib/utils";
-import { FileText, Plus, Upload } from "lucide-react";
+
 import { UploadDocumentDialog } from "./upload-document-dialog";
 
 export default async function DocumentsPage() {
-  const session = await auth();
-  
+  const user = await currentUser();
+
+  if (!user) {
+    redirect("/sign-in");
+  }
+
   const userTenants = await db.query.tenantMembers.findMany({
-    where: eq(tenantMembers.userId, session!.user!.id!),
+    where: eq(tenantMembers.userId, user.id),
     with: { tenant: true },
   });
 
   if (userTenants.length === 0) {
     return (
-      <div className="container py-8 px-6">
+      <div className="container px-6 py-8">
         <p className="text-muted-foreground">Create a bot first to upload documents.</p>
       </div>
     );
@@ -36,7 +48,7 @@ export default async function DocumentsPage() {
   });
 
   return (
-    <div className="container py-8 px-6 space-y-6">
+    <div className="container space-y-6 px-6 py-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">Knowledge base</h1>
@@ -50,14 +62,14 @@ export default async function DocumentsPage() {
       {allDocuments.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="font-semibold text-lg mb-2">No documents yet</h3>
-            <p className="text-muted-foreground mb-4">
+            <FileText className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+            <h3 className="mb-2 text-lg font-semibold">No documents yet</h3>
+            <p className="mb-4 text-muted-foreground">
               Upload markdown documents to give your bot knowledge about your product.
             </p>
             <UploadDocumentDialog tenantId={activeTenant.id}>
               <Button>
-                <Upload className="w-4 h-4 mr-2" />
+                <Upload className="mr-2 h-4 w-4" />
                 Upload first document
               </Button>
             </UploadDocumentDialog>
@@ -66,10 +78,10 @@ export default async function DocumentsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {allDocuments.map((doc) => (
-            <Card key={doc.id} className="hover:shadow-md transition-shadow">
+            <Card key={doc.id} className="transition-shadow hover:shadow-md">
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-brand-500" />
+                <CardTitle className="flex items-center gap-2 text-lg">
+                  <FileText className="h-5 w-5 text-brand-500" />
                   {doc.title}
                 </CardTitle>
                 <CardDescription>
@@ -77,7 +89,7 @@ export default async function DocumentsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <p className="text-sm text-muted-foreground line-clamp-3">
+                <p className="line-clamp-3 text-sm text-muted-foreground">
                   {truncate(doc.content, 200)}
                 </p>
               </CardContent>
@@ -88,4 +100,3 @@ export default async function DocumentsPage() {
     </div>
   );
 }
-

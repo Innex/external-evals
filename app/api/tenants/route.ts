@@ -1,41 +1,59 @@
-import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { db } from "@/db";
-import { tenants, tenantMembers } from "@/db/schema";
+import { currentUser } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
+import { NextResponse } from "next/server";
 import { z } from "zod";
+
+import { db } from "@/db";
+import { tenantMembers, tenants, users } from "@/db/schema";
 
 const createTenantSchema = z.object({
   name: z.string().min(1).max(100),
-  slug: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/),
+  slug: z
+    .string()
+    .min(1)
+    .max(50)
+    .regex(/^[a-z0-9-]+$/),
   modelProvider: z.enum(["openai", "anthropic", "google"]),
   modelName: z.string(),
   instructions: z.string().min(1),
   apiKey: z.string().min(1),
-  userId: z.string(),
 });
 
-export async function POST(request: Request) {
+export async function POST(request: Request): Promise<Response> {
   try {
-    const session = await auth();
-    
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { message: "Unauthorized" },
-        { status: 401 }
-      );
+    const clerkUser = await currentUser();
+
+    if (!clerkUser) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
+    // Ensure user exists in DB
+    let dbUser = await db.query.users.findFirst({
+      where: eq(users.id, clerkUser.id),
+    });
+
+    if (!dbUser) {
+      const email = clerkUser.emailAddresses[0]?.emailAddress;
+      if (!email) {
+        return NextResponse.json({ message: "User has no email" }, { status: 400 });
+      }
+
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          id: clerkUser.id,
+          email,
+          name: clerkUser.fullName ?? clerkUser.firstName ?? "User",
+          image: clerkUser.imageUrl,
+          emailVerified: new Date(),
+        })
+        .returning();
+
+      dbUser = newUser;
+    }
+
+    const body: unknown = await request.json();
     const data = createTenantSchema.parse(body);
-
-    // Verify user ID matches session
-    if (data.userId !== session.user.id) {
-      return NextResponse.json(
-        { message: "Unauthorized" },
-        { status: 401 }
-      );
-    }
 
     // Check if slug already exists
     const existing = await db.query.tenants.findFirst({
@@ -45,7 +63,7 @@ export async function POST(request: Request) {
     if (existing) {
       return NextResponse.json(
         { message: "A bot with this URL slug already exists" },
-        { status: 400 }
+        { status: 400 },
       );
     }
 
@@ -70,7 +88,7 @@ export async function POST(request: Request) {
 
     // Add user as owner
     await db.insert(tenantMembers).values({
-      userId: data.userId,
+      userId: dbUser.id,
       tenantId: tenant.id,
       role: "owner",
     });
@@ -78,34 +96,28 @@ export async function POST(request: Request) {
     return NextResponse.json(tenant, { status: 201 });
   } catch (error) {
     console.error("Error creating tenant:", error);
-    
+
     if (error instanceof z.ZodError) {
       return NextResponse.json(
         { message: "Invalid data", errors: error.errors },
-        { status: 400 }
+        { status: 400 },
       );
     }
-    
-    return NextResponse.json(
-      { message: "Internal server error" },
-      { status: 500 }
-    );
+
+    return NextResponse.json({ message: "Internal server error" }, { status: 500 });
   }
 }
 
-export async function GET() {
+export async function GET(): Promise<Response> {
   try {
-    const session = await auth();
-    
-    if (!session?.user?.id) {
-      return NextResponse.json(
-        { message: "Unauthorized" },
-        { status: 401 }
-      );
+    const clerkUser = await currentUser();
+
+    if (!clerkUser) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
     const userTenants = await db.query.tenantMembers.findMany({
-      where: eq(tenantMembers.userId, session.user.id),
+      where: eq(tenantMembers.userId, clerkUser.id),
       with: {
         tenant: true,
       },
@@ -114,10 +126,6 @@ export async function GET() {
     return NextResponse.json(userTenants.map((tm) => tm.tenant));
   } catch (error) {
     console.error("Error fetching tenants:", error);
-    return NextResponse.json(
-      { message: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ message: "Internal server error" }, { status: 500 });
   }
 }
-

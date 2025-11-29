@@ -1,24 +1,29 @@
-import { auth } from "@/lib/auth";
-import { db } from "@/db";
-import { tenantMembers, conversations, messages } from "@/db/schema";
-import { eq, desc, count } from "drizzle-orm";
-import Link from "next/link";
-import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { formatRelativeTime } from "@/lib/utils";
+import { currentUser } from "@clerk/nextjs/server";
+import { desc, eq } from "drizzle-orm";
 import { MessageSquare } from "lucide-react";
+import { redirect } from "next/navigation";
+
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { db } from "@/db";
+import { conversations, messages, tenantMembers } from "@/db/schema";
+import { formatRelativeTime } from "@/lib/utils";
 
 export default async function ConversationsPage() {
-  const session = await auth();
-  
+  const user = await currentUser();
+
+  if (!user) {
+    redirect("/sign-in");
+  }
+
   const userTenants = await db.query.tenantMembers.findMany({
-    where: eq(tenantMembers.userId, session!.user!.id!),
+    where: eq(tenantMembers.userId, user.id),
     with: { tenant: true },
   });
 
   if (userTenants.length === 0) {
     return (
-      <div className="container py-8 px-6">
+      <div className="container px-6 py-8">
         <p className="text-muted-foreground">Create a bot first to see conversations.</p>
       </div>
     );
@@ -39,19 +44,17 @@ export default async function ConversationsPage() {
   });
 
   return (
-    <div className="container py-8 px-6 space-y-6">
+    <div className="container space-y-6 px-6 py-8">
       <div>
         <h1 className="text-3xl font-bold">Conversations</h1>
-        <p className="text-muted-foreground">
-          View all support conversations
-        </p>
+        <p className="text-muted-foreground">View all support conversations</p>
       </div>
 
       {allConversations.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
-            <MessageSquare className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-            <h3 className="font-semibold text-lg mb-2">No conversations yet</h3>
+            <MessageSquare className="mx-auto mb-4 h-12 w-12 text-muted-foreground" />
+            <h3 className="mb-2 text-lg font-semibold">No conversations yet</h3>
             <p className="text-muted-foreground">
               Conversations will appear here when users interact with your widget.
             </p>
@@ -61,19 +64,19 @@ export default async function ConversationsPage() {
         <div className="space-y-3">
           {allConversations.map((conv) => {
             const lastMessage = conv.messages[0];
-            
+
             return (
-              <Card key={conv.id} className="hover:shadow-md transition-shadow">
+              <Card key={conv.id} className="transition-shadow hover:shadow-md">
                 <CardContent className="py-4">
                   <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-2 flex items-center gap-2">
                         <Badge variant="secondary">
                           Session: {conv.sessionId.slice(0, 8)}...
                         </Badge>
                       </div>
                       {lastMessage ? (
-                        <p className="text-sm text-muted-foreground truncate">
+                        <p className="truncate text-sm text-muted-foreground">
                           <span className="font-medium">
                             {lastMessage.role === "user" ? "User" : "Bot"}:
                           </span>{" "}
@@ -83,7 +86,7 @@ export default async function ConversationsPage() {
                         <p className="text-sm text-muted-foreground">No messages</p>
                       )}
                     </div>
-                    <div className="text-right shrink-0">
+                    <div className="shrink-0 text-right">
                       <p className="text-xs text-muted-foreground">
                         {formatRelativeTime(conv.updatedAt)}
                       </p>
@@ -98,4 +101,3 @@ export default async function ConversationsPage() {
     </div>
   );
 }
-
