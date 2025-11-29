@@ -44,6 +44,27 @@ export function getModel(tenant: Tenant) {
   return provider(tenant.modelName);
 }
 
+/**
+ * Get a model instance with explicit provider, model name, and API key.
+ * Useful when you don't have a full Tenant object.
+ */
+export function getModelWithConfig(
+  provider: ModelProvider,
+  modelName: string,
+  apiKey: string,
+) {
+  switch (provider) {
+    case "openai":
+      return createOpenAI({ apiKey })(modelName);
+    case "anthropic":
+      return createAnthropic({ apiKey })(modelName);
+    case "google":
+      return createGoogleGenerativeAI({ apiKey })(modelName);
+    default:
+      throw new Error(`Unknown provider: ${provider}`);
+  }
+}
+
 export const MODEL_OPTIONS = {
   openai: [
     { value: "gpt-5.1", label: "GPT-5.1" },

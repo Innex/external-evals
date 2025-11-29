@@ -86,8 +86,8 @@ export default async function EvalsPage() {
                 </Button>
               </Link>
             ) : (
-              <Link href="/dashboard/traces">
-                <Button>View traces</Button>
+              <Link href="/dashboard/conversations">
+                <Button>View conversations</Button>
               </Link>
             )}
           </CardContent>
