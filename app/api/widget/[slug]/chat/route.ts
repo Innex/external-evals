@@ -1,6 +1,6 @@
 import { type CoreMessage } from "ai";
 import * as ai from "ai";
-import { initLogger, wrapAISDK } from "braintrust";
+import { initLogger, traced, wrapAISDK } from "braintrust";
 import { and, eq, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
@@ -71,103 +71,128 @@ export async function POST(
         .returning();
     }
 
-    // Get the last user message for context retrieval
+    // Get the last user message
     const lastUserMessage = chatMessages.filter((m) => m.role === "user").pop();
+    const userInput =
+      lastUserMessage && typeof lastUserMessage.content === "string"
+        ? lastUserMessage.content
+        : "";
 
-    // Retrieve relevant context from documents
-    let context = "";
-    if (lastUserMessage && typeof lastUserMessage.content === "string") {
-      context = await getRelevantContext(
-        tenant.id,
-        lastUserMessage.content,
-        tenant.openaiApiKey ?? undefined,
-      );
-    }
-
-    // Build system prompt
-    const systemPrompt = buildSystemPrompt(
-      tenant.instructions,
-      context,
-      tenant.welcomeMessage,
-    );
-
-    // Get the AI model
-    const model = getModel(tenant);
-
-    // Track start time
-    const startTime = Date.now();
-
-    // Create the stream (wrapAISDK automatically traces this)
-    const result = await streamText({
-      model,
-      system: systemPrompt,
-      messages: chatMessages,
-      temperature: tenant.temperature,
-      maxTokens: 1024,
-      experimental_telemetry: {
-        isEnabled: true,
-        metadata: {
-          tenantId: tenant.id,
-          tenantSlug: tenant.slug,
-          sessionId,
-          modelProvider: tenant.modelProvider,
-          modelName: tenant.modelName,
-        },
-      },
-      onFinish: async ({ text, usage }) => {
-        const latencyMs = Date.now() - startTime;
-
-        // Save user message
-        if (lastUserMessage && typeof lastUserMessage.content === "string") {
-          await db.insert(messages).values({
+    // Use traced() to wrap the entire chat turn
+    const result = await traced(
+      async (span) => {
+        // Log input and metadata at the start
+        span.log({
+          input: userInput,
+          metadata: {
+            sessionId,
             conversationId: conversation.id,
-            role: "user",
-            content: lastUserMessage.content,
-          });
-        }
-
-        // Create trace record (handle NaN/undefined token counts)
-        const promptTokens = usage?.promptTokens;
-        const completionTokens = usage?.completionTokens;
-
-        const [trace] = await db
-          .insert(traces)
-          .values({
             tenantId: tenant.id,
-            conversationId: conversation.id,
+            tenantSlug: tenant.slug,
             modelProvider: tenant.modelProvider,
             modelName: tenant.modelName,
-            input: { messages: chatMessages, context },
-            output: { text },
-            promptTokens:
-              typeof promptTokens === "number" && !Number.isNaN(promptTokens)
-                ? promptTokens
-                : null,
-            completionTokens:
-              typeof completionTokens === "number" && !Number.isNaN(completionTokens)
-                ? completionTokens
-                : null,
-            latencyMs:
-              typeof latencyMs === "number" && !Number.isNaN(latencyMs)
-                ? latencyMs
-                : null,
-            metadata: {
-              sessionId,
-              instructions: tenant.instructions,
-              temperature: tenant.temperature,
-            },
-          })
-          .returning();
-
-        // Save assistant message
-        await db.insert(messages).values({
-          conversationId: conversation.id,
-          role: "assistant",
-          content: text,
-          traceId: trace.id,
+          },
         });
+
+        // Retrieve relevant context from documents
+        let context = "";
+        if (userInput) {
+          context = await getRelevantContext(
+            tenant.id,
+            userInput,
+            tenant.openaiApiKey ?? undefined,
+          );
+        }
+
+        // Build system prompt
+        const systemPrompt = buildSystemPrompt(
+          tenant.instructions,
+          context,
+          tenant.welcomeMessage,
+        );
+
+        // Get the AI model
+        const model = getModel(tenant);
+
+        // Track start time
+        const startTime = Date.now();
+
+        // Create the stream (wrapAISDK automatically traces this as a nested span)
+        const streamResult = streamText({
+          model,
+          system: systemPrompt,
+          messages: chatMessages,
+          temperature: tenant.temperature,
+          maxTokens: 1024,
+          onFinish: async ({ text, usage }) => {
+            const latencyMs = Date.now() - startTime;
+
+            // Save user message
+            if (userInput) {
+              await db.insert(messages).values({
+                conversationId: conversation.id,
+                role: "user",
+                content: userInput,
+              });
+            }
+
+            // Create trace record (handle NaN/undefined token counts)
+            const promptTokens = usage?.promptTokens;
+            const completionTokens = usage?.completionTokens;
+
+            const [trace] = await db
+              .insert(traces)
+              .values({
+                tenantId: tenant.id,
+                conversationId: conversation.id,
+                modelProvider: tenant.modelProvider,
+                modelName: tenant.modelName,
+                input: { message: userInput, context },
+                output: { text },
+                promptTokens:
+                  typeof promptTokens === "number" && !Number.isNaN(promptTokens)
+                    ? promptTokens
+                    : null,
+                completionTokens:
+                  typeof completionTokens === "number" && !Number.isNaN(completionTokens)
+                    ? completionTokens
+                    : null,
+                latencyMs:
+                  typeof latencyMs === "number" && !Number.isNaN(latencyMs)
+                    ? latencyMs
+                    : null,
+                metadata: {
+                  sessionId,
+                  conversationId: conversation.id,
+                  messageCount: chatMessages.length,
+                },
+              })
+              .returning();
+
+            // Save assistant message
+            await db.insert(messages).values({
+              conversationId: conversation.id,
+              role: "assistant",
+              content: text,
+              traceId: trace.id,
+            });
+
+            // Log output to the span
+            span.log({
+              output: text,
+              metadata: {
+                hasContext: context.length > 0,
+              },
+            });
+          },
+        });
+
+        return streamResult;
       },
-    });
+      {
+        name: "chat-turn",
+      },
+    );
 
     // Return streaming response
     return result.toDataStreamResponse();
