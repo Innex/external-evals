@@ -1,18 +1,11 @@
 import { type CoreMessage } from "ai";
 import * as ai from "ai";
 import { initLogger, traced, wrapAISDK } from "braintrust";
-import { and, eq, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
 import { db } from "@/db";
-import {
-  conversations,
-  documentChunks,
-  documents,
-  messages,
-  tenants,
-  traces,
-} from "@/db/schema";
+import { documentChunks, documents, tenants } from "@/db/schema";
 import { getEmbedding } from "@/lib/ai/embeddings";
 import { getModel } from "@/lib/ai/providers";
 
@@ -53,24 +46,6 @@ export async function POST(
       return new Response("Widget is disabled", { status: 403 });
     }
 
-    // Get or create conversation
-    let conversation = await db.query.conversations.findFirst({
-      where: and(
-        eq(conversations.tenantId, tenant.id),
-        eq(conversations.sessionId, sessionId),
-      ),
-    });
-
-    if (!conversation) {
-      [conversation] = await db
-        .insert(conversations)
-        .values({
-          tenantId: tenant.id,
-          sessionId,
-        })
-        .returning();
-    }
-
     // Get the last user message
     const lastUserMessage = chatMessages.filter((m) => m.role === "user").pop();
     const userInput =
@@ -79,6 +54,7 @@ export async function POST(
         : "";
 
     // Use traced() to wrap the entire chat turn
+    // Braintrust stores all conversation data - no need for local Postgres storage
     const result = await traced(
       async (span) => {
         // Log input and metadata at the start
@@ -86,7 +62,6 @@ export async function POST(
           input: userInput,
           metadata: {
             sessionId,
-            conversationId: conversation.id,
             tenantId: tenant.id,
             tenantSlug: tenant.slug,
             modelProvider: tenant.modelProvider,
@@ -114,9 +89,6 @@ export async function POST(
         // Get the AI model
         const model = getModel(tenant);
 
-        // Track start time
-        const startTime = Date.now();
-
         // Create the stream (wrapAISDK automatically traces this as a nested span)
         const streamResult = streamText({
           model,
@@ -124,60 +96,8 @@ export async function POST(
           messages: chatMessages,
           temperature: tenant.temperature,
           maxTokens: 1024,
-          onFinish: async ({ text, usage }) => {
-            const latencyMs = Date.now() - startTime;
-
-            // Save user message
-            if (userInput) {
-              await db.insert(messages).values({
-                conversationId: conversation.id,
-                role: "user",
-                content: userInput,
-              });
-            }
-
-            // Create trace record (handle NaN/undefined token counts)
-            const promptTokens = usage?.promptTokens;
-            const completionTokens = usage?.completionTokens;
-
-            const [trace] = await db
-              .insert(traces)
-              .values({
-                tenantId: tenant.id,
-                conversationId: conversation.id,
-                modelProvider: tenant.modelProvider,
-                modelName: tenant.modelName,
-                input: { message: userInput, context },
-                output: { text },
-                promptTokens:
-                  typeof promptTokens === "number" && !Number.isNaN(promptTokens)
-                    ? promptTokens
-                    : null,
-                completionTokens:
-                  typeof completionTokens === "number" && !Number.isNaN(completionTokens)
-                    ? completionTokens
-                    : null,
-                latencyMs:
-                  typeof latencyMs === "number" && !Number.isNaN(latencyMs)
-                    ? latencyMs
-                    : null,
-                metadata: {
-                  sessionId,
-                  conversationId: conversation.id,
-                  messageCount: chatMessages.length,
-                },
-              })
-              .returning();
-
-            // Save assistant message
-            await db.insert(messages).values({
-              conversationId: conversation.id,
-              role: "assistant",
-              content: text,
-              traceId: trace.id,
-            });
-
-            // Log output to the span
+          onFinish: async ({ text }) => {
+            // Log output to the span - Braintrust captures everything
             span.log({
               output: text,
               metadata: {
