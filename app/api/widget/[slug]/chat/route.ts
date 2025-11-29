@@ -1,0 +1,227 @@
+import { NextRequest } from "next/server";
+import { db } from "@/db";
+import { tenants, conversations, messages, traces, documentChunks, documents } from "@/db/schema";
+import { eq, sql, and, desc } from "drizzle-orm";
+import { streamText, type CoreMessage } from "ai";
+import { getModel } from "@/lib/ai/providers";
+import { getEmbedding } from "@/lib/ai/embeddings";
+import { initLogger, wrapAISDK, traced } from "braintrust";
+import * as ai from "ai";
+import { nanoid } from "nanoid";
+
+// Initialize Braintrust
+if (process.env.BRAINTRUST_API_KEY) {
+  initLogger({
+    projectName: process.env.BRAINTRUST_PROJECT_NAME || "customer-support-platform",
+    apiKey: process.env.BRAINTRUST_API_KEY,
+  });
+}
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  const { slug } = await params;
+
+  try {
+    const body = await request.json();
+    const { messages: chatMessages, sessionId } = body as {
+      messages: CoreMessage[];
+      sessionId: string;
+    };
+
+    // Get tenant
+    const tenant = await db.query.tenants.findFirst({
+      where: eq(tenants.slug, slug),
+    });
+
+    if (!tenant) {
+      return new Response("Tenant not found", { status: 404 });
+    }
+
+    if (!tenant.widgetEnabled) {
+      return new Response("Widget is disabled", { status: 403 });
+    }
+
+    // Get or create conversation
+    let conversation = await db.query.conversations.findFirst({
+      where: and(
+        eq(conversations.tenantId, tenant.id),
+        eq(conversations.sessionId, sessionId)
+      ),
+    });
+
+    if (!conversation) {
+      [conversation] = await db
+        .insert(conversations)
+        .values({
+          tenantId: tenant.id,
+          sessionId,
+        })
+        .returning();
+    }
+
+    // Get the last user message for context retrieval
+    const lastUserMessage = chatMessages
+      .filter((m) => m.role === "user")
+      .pop();
+
+    // Retrieve relevant context from documents
+    let context = "";
+    if (lastUserMessage && typeof lastUserMessage.content === "string") {
+      context = await getRelevantContext(tenant.id, lastUserMessage.content, tenant.openaiApiKey || undefined);
+    }
+
+    // Build system prompt
+    const systemPrompt = buildSystemPrompt(tenant.instructions, context, tenant.welcomeMessage);
+
+    // Get the AI model
+    const model = getModel(tenant);
+
+    // Wrap AI SDK for Braintrust tracing
+    const { streamText: tracedStreamText } = wrapAISDK(ai);
+
+    // Track start time
+    const startTime = Date.now();
+
+    // Create the stream with tracing
+    const result = await traced(
+      async () => {
+        return tracedStreamText({
+          model,
+          system: systemPrompt,
+          messages: chatMessages,
+          temperature: tenant.temperature,
+          maxTokens: 1024,
+          onFinish: async ({ text, usage }) => {
+            const latencyMs = Date.now() - startTime;
+
+            // Save user message
+            if (lastUserMessage && typeof lastUserMessage.content === "string") {
+              await db.insert(messages).values({
+                conversationId: conversation!.id,
+                role: "user",
+                content: lastUserMessage.content,
+              });
+            }
+
+            // Create trace record
+            const [trace] = await db
+              .insert(traces)
+              .values({
+                tenantId: tenant.id,
+                conversationId: conversation!.id,
+                modelProvider: tenant.modelProvider,
+                modelName: tenant.modelName,
+                input: { messages: chatMessages, context },
+                output: { text },
+                promptTokens: usage?.promptTokens,
+                completionTokens: usage?.completionTokens,
+                latencyMs,
+                metadata: {
+                  sessionId,
+                  instructions: tenant.instructions,
+                  temperature: tenant.temperature,
+                },
+              })
+              .returning();
+
+            // Save assistant message
+            await db.insert(messages).values({
+              conversationId: conversation!.id,
+              role: "assistant",
+              content: text,
+              traceId: trace.id,
+            });
+          },
+        });
+      },
+      {
+        name: "chat-completion",
+        metadata: {
+          tenantId: tenant.id,
+          tenantSlug: tenant.slug,
+          sessionId,
+          modelProvider: tenant.modelProvider,
+          modelName: tenant.modelName,
+        },
+      }
+    )();
+
+    // Return streaming response
+    return result.toDataStreamResponse();
+  } catch (error) {
+    console.error("Chat error:", error);
+    return new Response(
+      JSON.stringify({ error: "Failed to process chat" }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
+    );
+  }
+}
+
+async function getRelevantContext(
+  tenantId: string,
+  query: string,
+  apiKey?: string
+): Promise<string> {
+  try {
+    // Get query embedding
+    const queryEmbedding = await getEmbedding(query, apiKey);
+    const embeddingStr = `[${queryEmbedding.join(",")}]`;
+
+    // Find similar chunks using pgvector
+    const similarChunks = await db
+      .select({
+        content: documentChunks.content,
+        documentId: documentChunks.documentId,
+        similarity: sql<number>`1 - (${documentChunks.embedding} <=> ${embeddingStr}::vector)`,
+      })
+      .from(documentChunks)
+      .innerJoin(documents, eq(documentChunks.documentId, documents.id))
+      .where(eq(documents.tenantId, tenantId))
+      .orderBy(sql`${documentChunks.embedding} <=> ${embeddingStr}::vector`)
+      .limit(3);
+
+    if (similarChunks.length === 0) {
+      return "";
+    }
+
+    // Format context
+    return similarChunks
+      .filter((chunk) => chunk.similarity > 0.5) // Only include relevant chunks
+      .map((chunk) => chunk.content)
+      .join("\n\n---\n\n");
+  } catch (error) {
+    console.error("Error getting context:", error);
+    return "";
+  }
+}
+
+function buildSystemPrompt(
+  instructions: string,
+  context: string,
+  welcomeMessage: string
+): string {
+  let prompt = instructions;
+
+  if (context) {
+    prompt += `\n\n## Relevant Context from Knowledge Base\n\nUse the following information to help answer the user's question:\n\n${context}\n\n---\n\nIf the context doesn't contain relevant information, you can still try to help based on your general knowledge, but let the user know if you're not certain.`;
+  }
+
+  prompt += `\n\n## Guidelines\n- Be helpful, friendly, and concise\n- If you don't know something, say so honestly\n- Your welcome message is: "${welcomeMessage}"`;
+
+  return prompt;
+}
+
+// Handle OPTIONS for CORS
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 200,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
+  });
+}
+
