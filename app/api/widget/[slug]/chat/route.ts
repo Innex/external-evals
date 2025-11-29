@@ -1,24 +1,10 @@
 import { type CoreMessage } from "ai";
-import * as ai from "ai";
-import { initLogger, traced, wrapAISDK } from "braintrust";
-import { eq, sql } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
 import { db } from "@/db";
-import { documentChunks, documents, tenants } from "@/db/schema";
-import { getEmbedding } from "@/lib/ai/embeddings";
-import { getModel } from "@/lib/ai/providers";
-
-// Initialize Braintrust
-if (process.env.BRAINTRUST_API_KEY) {
-  initLogger({
-    projectName: process.env.BRAINTRUST_PROJECT_NAME || "customer-support-platform",
-    apiKey: process.env.BRAINTRUST_API_KEY,
-  });
-}
-
-// Wrap AI SDK for automatic tracing
-const { streamText } = wrapAISDK(ai);
+import { tenants } from "@/db/schema";
+import { streamChatTurn } from "@/lib/chat-engine";
 
 export async function POST(
   request: NextRequest,
@@ -46,73 +32,12 @@ export async function POST(
       return new Response("Widget is disabled", { status: 403 });
     }
 
-    // Get the last user message
-    const lastUserMessage = chatMessages.filter((m) => m.role === "user").pop();
-    const userInput =
-      lastUserMessage && typeof lastUserMessage.content === "string"
-        ? lastUserMessage.content
-        : "";
-
-    // Use traced() to wrap the entire chat turn
-    // Braintrust stores all conversation data - no need for local Postgres storage
-    const result = await traced(
-      async (span) => {
-        // Log input and metadata at the start
-        span.log({
-          input: userInput,
-          metadata: {
-            sessionId,
-            tenantId: tenant.id,
-            tenantSlug: tenant.slug,
-            modelProvider: tenant.modelProvider,
-            modelName: tenant.modelName,
-          },
-        });
-
-        // Retrieve relevant context from documents
-        let context = "";
-        if (userInput) {
-          context = await getRelevantContext(
-            tenant.id,
-            userInput,
-            tenant.openaiApiKey ?? undefined,
-          );
-        }
-
-        // Build system prompt
-        const systemPrompt = buildSystemPrompt(
-          tenant.instructions,
-          context,
-          tenant.welcomeMessage,
-        );
-
-        // Get the AI model
-        const model = getModel(tenant);
-
-        // Create the stream (wrapAISDK automatically traces this as a nested span)
-        const streamResult = streamText({
-          model,
-          system: systemPrompt,
-          messages: chatMessages,
-          temperature: tenant.temperature,
-          maxTokens: 1024,
-          onFinish: async ({ text }) => {
-            // Log output to the span - Braintrust captures everything
-            span.log({
-              output: text,
-              metadata: {
-                hasContext: context.length > 0,
-              },
-            });
-          },
-        });
-
-        return streamResult;
-      },
-      {
-        name: "chat-turn",
-      },
-    );
+    const result = await streamChatTurn({
+      tenant,
+      messages: chatMessages,
+      sessionId,
+      spanName: "chat-turn",
+    });
 
     // Return streaming response
     return result.toDataStreamResponse();
@@ -123,60 +48,6 @@ export async function POST(
       headers: { "Content-Type": "application/json" },
     });
   }
-}
-
-async function getRelevantContext(
-  tenantId: string,
-  query: string,
-  apiKey?: string,
-): Promise<string> {
-  try {
-    // Get query embedding
-    const queryEmbedding = await getEmbedding(query, apiKey);
-    const embeddingStr = `[${queryEmbedding.join(",")}]`;
-
-    // Find similar chunks using pgvector
-    const similarChunks = await db
-      .select({
-        content: documentChunks.content,
-        documentId: documentChunks.documentId,
-        similarity: sql<number>`1 - (${documentChunks.embedding} <=> ${embeddingStr}::vector)`,
-      })
-      .from(documentChunks)
-      .innerJoin(documents, eq(documentChunks.documentId, documents.id))
-      .where(eq(documents.tenantId, tenantId))
-      .orderBy(sql`${documentChunks.embedding} <=> ${embeddingStr}::vector`)
-      .limit(3);
-
-    if (similarChunks.length === 0) {
-      return "";
-    }
-
-    // Format context
-    return similarChunks
-      .filter((chunk) => chunk.similarity > 0.5) // Only include relevant chunks
-      .map((chunk) => chunk.content)
-      .join("\n\n---\n\n");
-  } catch (error) {
-    console.error("Error getting context:", error);
-    return "";
-  }
-}
-
-function buildSystemPrompt(
-  instructions: string,
-  context: string,
-  welcomeMessage: string,
-): string {
-  let prompt = instructions;
-
-  if (context) {
-    prompt += `\n\n## Relevant Context from Knowledge Base\n\nUse the following information to help answer the user's question:\n\n${context}\n\n---\n\nIf the context doesn't contain relevant information, you can still try to help based on your general knowledge, but let the user know if you're not certain.`;
-  }
-
-  prompt += `\n\n## Guidelines\n- Be helpful, friendly, and concise\n- If you don't know something, say so honestly\n- Your welcome message is: "${welcomeMessage}"`;
-
-  return prompt;
 }
 
 // Handle OPTIONS for CORS

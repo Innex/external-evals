@@ -82,6 +82,46 @@ export async function runBtql<T>(query: string): Promise<T[]> {
   return json.data ?? [];
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type BtqlQueryObject = Record<string, any>;
+
+export async function runBtqlObject<T>(query: BtqlQueryObject): Promise<T[]> {
+  const apiKey = process.env.BRAINTRUST_API_KEY;
+  if (!apiKey) {
+    console.warn(
+      "[braintrust] Missing BRAINTRUST_API_KEY env var. Returning empty result.",
+    );
+    return [];
+  }
+
+  const { apiUrl } = await ensureBraintrustState();
+
+  const response = await fetch(`${apiUrl}/btql`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      query,
+      use_columnstore: false,
+      brainstore_realtime: true,
+      query_source: "braintrust-evals-app",
+    }),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `BTQL query failed (${response.status}): ${errorText || "Unknown error"}`,
+    );
+  }
+
+  const json = (await response.json()) as BtqlResponse<T>;
+  return json.data ?? [];
+}
+
 export async function getProjectId(): Promise<string> {
   const { projectId } = await ensureBraintrustState();
   return projectId;

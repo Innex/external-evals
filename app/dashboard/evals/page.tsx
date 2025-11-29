@@ -106,7 +106,7 @@ export default async function EvalsPage() {
                       <div>
                         <h3 className="font-medium">{evalRun.name}</h3>
                         <p className="text-sm text-muted-foreground">
-                          Dataset: {evalRun.dataset.name}
+                          Dataset: {evalRun.dataset?.name ?? "Unknown"}
                         </p>
                       </div>
                     </div>
@@ -120,16 +120,9 @@ export default async function EvalsPage() {
                   {evalRun.summary && (
                     <div className="mt-3 border-t pt-3">
                       <div className="grid grid-cols-3 gap-4 text-sm">
-                        {Object.entries(evalRun.summary as Record<string, number>).map(
-                          ([key, value]) => (
-                            <div key={key}>
-                              <p className="capitalize text-muted-foreground">{key}</p>
-                              <p className="font-medium">
-                                {typeof value === "number" ? value.toFixed(2) : value}
-                              </p>
-                            </div>
-                          ),
-                        )}
+                        <SummaryDisplay
+                          summary={evalRun.summary as Record<string, unknown>}
+                        />
                       </div>
                     </div>
                   )}
@@ -165,4 +158,67 @@ function StatusBadge({ status }: { status: string }) {
   };
 
   return <Badge variant={variants[status] ?? "outline"}>{status}</Badge>;
+}
+
+function SummaryDisplay({ summary }: { summary: Record<string, unknown> }) {
+  const items: { key: string; value: string }[] = [];
+
+  // Handle scores object (e.g., { Factuality: { score: 0.5, name: "Factuality" } })
+  if (summary.scores && typeof summary.scores === "object") {
+    for (const [name, data] of Object.entries(
+      summary.scores as Record<string, unknown>,
+    )) {
+      const scoreData = data as { score?: number; name?: string } | null;
+      if (scoreData?.score !== undefined) {
+        items.push({
+          key: scoreData.name ?? name,
+          value: `${Math.round(scoreData.score * 100)}%`,
+        });
+      }
+    }
+  }
+
+  // Handle metrics object
+  if (summary.metrics && typeof summary.metrics === "object") {
+    for (const [name, data] of Object.entries(
+      summary.metrics as Record<string, unknown>,
+    )) {
+      const metricData = data as { metric?: number; name?: string } | null;
+      if (metricData?.metric !== undefined) {
+        items.push({
+          key: metricData.name ?? name,
+          value: metricData.metric.toFixed(2),
+        });
+      }
+    }
+  }
+
+  // Handle simple key-value pairs (for backwards compatibility)
+  for (const [key, value] of Object.entries(summary)) {
+    if (
+      key !== "scores" &&
+      key !== "metrics" &&
+      key !== "experimentName" &&
+      key !== "experimentUrl"
+    ) {
+      if (typeof value === "number") {
+        items.push({ key, value: value.toFixed(2) });
+      } else if (typeof value === "string") {
+        items.push({ key, value });
+      }
+    }
+  }
+
+  if (items.length === 0) return null;
+
+  return (
+    <>
+      {items.slice(0, 3).map(({ key, value }) => (
+        <div key={key}>
+          <p className="capitalize text-muted-foreground">{key}</p>
+          <p className="font-medium">{value}</p>
+        </div>
+      ))}
+    </>
+  );
 }

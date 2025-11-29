@@ -1,12 +1,13 @@
 import { currentUser } from "@clerk/nextjs/server";
+import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/db";
 import { datasets, evals, tenants } from "@/db/schema";
-import { getModelWithConfig } from "@/lib/ai/providers";
 import { runEvaluation } from "@/lib/braintrust-eval";
+import { completeChatTurn } from "@/lib/chat-engine";
 
 const runEvalSchema = z.object({
   name: z.string().optional(), // Optional - Braintrust will auto-generate if not provided
@@ -108,12 +109,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   runEvaluationAsync(evalRecord.id, {
     experimentName: name, // Pass user-provided name as experimentName (optional)
     datasetId,
-    tenantId,
-    modelProvider: tenant.modelProvider,
-    modelName: tenant.modelName,
-    temperature: tenant.temperature,
-    instructions: tenant.instructions,
-    apiKey,
+    tenant,
   }).catch(console.error);
 
   return NextResponse.json({ eval: evalRecord }, { status: 201 });
@@ -124,63 +120,36 @@ async function runEvaluationAsync(
   params: {
     experimentName?: string; // Optional user-provided name
     datasetId: string;
-    tenantId: string;
-    modelProvider: "openai" | "anthropic" | "google";
-    modelName: string;
-    temperature: number;
-    instructions: string;
-    apiKey: string;
+    tenant: typeof tenants.$inferSelect;
   },
 ): Promise<void> {
   try {
-    const {
-      experimentName,
-      datasetId,
-      tenantId,
-      modelProvider,
-      modelName,
-      temperature,
-      instructions,
-      apiKey,
-    } = params;
-
-    // Get the model
-    const model = getModelWithConfig(modelProvider, modelName, apiKey);
-
-    // Import AI SDK dynamically
-    const { generateText } = await import("ai");
+    const { experimentName, datasetId, tenant } = params;
 
     // Run the evaluation
     const summary = await runEvaluation({
       datasetId,
-      tenantId,
-      task: async (input) => {
-        // Build the messages for the model
-        const messages = [
-          {
-            role: "system" as const,
-            content: instructions,
-          },
-          ...input.messages.map((m) => ({
-            role: m.role as "user" | "assistant",
-            content: m.content,
-          })),
-        ];
+      tenantId: tenant.id,
+      task: async (input: { role: string; content: string }[]) => {
+        const messages = input.map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.content,
+        }));
 
-        // Generate the response
-        const result = await generateText({
-          model,
+        const response = await completeChatTurn({
+          tenant,
           messages,
-          temperature,
+          sessionId: `eval-${tenant.id}-${evalId}-${randomUUID()}`,
+          spanName: "chat-turn",
         });
 
-        return result.text;
+        return response;
       },
       experimentName, // Pass through - Braintrust will auto-deduplicate
       metadata: {
-        tenantId,
-        modelProvider,
-        modelName,
+        tenantId: tenant.id,
+        modelProvider: tenant.modelProvider,
+        modelName: tenant.modelName,
       },
     });
 

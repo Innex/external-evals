@@ -1,17 +1,16 @@
+import type { ScorerArgs } from "autoevals";
 import { Factuality } from "autoevals";
 import { Eval, initDataset } from "braintrust";
 
 // All saved conversations go into a single Braintrust dataset
 const DATASET_NAME = "saved_conversations";
 
-interface EvalInput {
-  messages: { role: "user" | "assistant"; content: string }[];
-}
+export type ConversationHistory = { role: string; content: string }[];
 
 interface RunEvalParams {
   datasetId: string; // Our Postgres dataset ID (used for filtering via _internal_btql)
   tenantId: string;
-  task: (input: EvalInput) => Promise<string>;
+  task: (input: ConversationHistory) => Promise<string>;
   experimentName?: string;
   metadata?: Record<string, unknown>;
   onProgress?: (progress: ProgressUpdate) => void;
@@ -30,6 +29,16 @@ export interface EvalSummary {
   experimentName?: string;
   scores?: Record<string, unknown>;
   metrics?: Record<string, unknown>;
+}
+
+async function factualityScorer(
+  args: ScorerArgs<string, { input: ConversationHistory }>,
+) {
+  const { input } = args;
+  return await Factuality({
+    ...args,
+    input: input.map((item) => item.content).join("\n"),
+  });
 }
 
 export async function runEvaluation(params: RunEvalParams): Promise<EvalSummary> {
@@ -57,8 +66,8 @@ export async function runEvaluation(params: RunEvalParams): Promise<EvalSummary>
   const result = await Eval(projectName, {
     data: dataset,
     task,
-    scores: [Factuality],
-    experimentName, // Optional - Braintrust will auto-deduplicate
+    scores: [factualityScorer],
+    experimentName,
     metadata,
     maxConcurrency: 10,
   });
