@@ -121,16 +121,6 @@ export default async function ConversationDetailPage({
           );
         })}
       </div>
-
-      {/* Link to view in Braintrust */}
-      <div className="border-t pt-4">
-        <p className="text-sm text-muted-foreground">
-          View detailed traces for this conversation in{" "}
-          <Link href="/dashboard/traces" className="text-primary hover:underline">
-            Traces
-          </Link>
-        </p>
-      </div>
     </div>
   );
 }

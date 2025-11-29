@@ -1,13 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { Loader2, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -15,10 +21,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MODEL_OPTIONS } from "@/lib/ai/providers";
-import { Loader2, Save } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import type { Tenant } from "@/db/schema";
+import { MODEL_OPTIONS } from "@/lib/ai/providers";
 
 interface SettingsFormProps {
   tenant: Tenant;
@@ -27,23 +34,23 @@ interface SettingsFormProps {
 export function SettingsForm({ tenant }: SettingsFormProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
-  
+
   // Basic settings
   const [name, setName] = useState(tenant.name);
   const [welcomeMessage, setWelcomeMessage] = useState(tenant.welcomeMessage);
   const [instructions, setInstructions] = useState(tenant.instructions);
-  
+
   // AI settings
   const [modelProvider, setModelProvider] = useState<"openai" | "anthropic" | "google">(
-    tenant.modelProvider as "openai" | "anthropic" | "google"
+    tenant.modelProvider as "openai" | "anthropic" | "google",
   );
   const [modelName, setModelName] = useState(tenant.modelName);
   const [temperature, setTemperature] = useState(tenant.temperature);
-  
+
   // Visual settings
   const [primaryColor, setPrimaryColor] = useState(tenant.primaryColor);
   const [accentColor, setAccentColor] = useState(tenant.accentColor);
-  
+
   // Widget settings
   const [widgetEnabled, setWidgetEnabled] = useState(tenant.widgetEnabled);
 
@@ -97,11 +104,7 @@ export function SettingsForm({ tenant }: SettingsFormProps) {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="name">Bot name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
+              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="welcomeMessage">Welcome message</Label>
@@ -120,7 +123,8 @@ export function SettingsForm({ tenant }: SettingsFormProps) {
                 rows={8}
               />
               <p className="text-xs text-muted-foreground">
-                These instructions are included in every conversation to guide the AI&apos;s behavior.
+                These instructions are included in every conversation to guide the
+                AI&apos;s behavior.
               </p>
             </div>
           </CardContent>
@@ -219,7 +223,7 @@ export function SettingsForm({ tenant }: SettingsFormProps) {
                     type="color"
                     value={primaryColor}
                     onChange={(e) => setPrimaryColor(e.target.value)}
-                    className="w-12 h-10 p-1"
+                    className="h-10 w-12 p-1"
                   />
                   <Input
                     value={primaryColor}
@@ -236,7 +240,7 @@ export function SettingsForm({ tenant }: SettingsFormProps) {
                     type="color"
                     value={accentColor}
                     onChange={(e) => setAccentColor(e.target.value)}
-                    className="w-12 h-10 p-1"
+                    className="h-10 w-12 p-1"
                   />
                   <Input
                     value={accentColor}
@@ -254,17 +258,19 @@ export function SettingsForm({ tenant }: SettingsFormProps) {
         <Card>
           <CardHeader>
             <CardTitle>Embed code</CardTitle>
-            <CardDescription>Add this to your website to show the chat widget</CardDescription>
+            <CardDescription>
+              Add this to your website to show the chat widget
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <pre className="p-4 rounded-lg bg-muted text-sm overflow-x-auto">
+            <pre className="overflow-x-auto rounded-lg bg-muted p-4 text-sm">
               <code>{`<script 
-  src="${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/widget.js"
+  src="${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/widget.js"
   data-tenant="${tenant.slug}"
   async
 ></script>`}</code>
             </pre>
-            <p className="text-xs text-muted-foreground mt-3">
+            <p className="mt-3 text-xs text-muted-foreground">
               Paste this code before the closing {`</body>`} tag on your website.
             </p>
           </CardContent>
@@ -275,12 +281,12 @@ export function SettingsForm({ tenant }: SettingsFormProps) {
         <Button onClick={handleSave} disabled={isLoading}>
           {isLoading ? (
             <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Saving...
             </>
           ) : (
             <>
-              <Save className="w-4 h-4 mr-2" />
+              <Save className="mr-2 h-4 w-4" />
               Save changes
             </>
           )}
@@ -289,4 +295,3 @@ export function SettingsForm({ tenant }: SettingsFormProps) {
     </Tabs>
   );
 }
-

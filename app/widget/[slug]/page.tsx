@@ -1,7 +1,9 @@
-import { db } from "@/db";
-import { tenants } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { notFound } from "next/navigation";
+
+import { db } from "@/db";
+import { tenants } from "@/db/schema";
+
 import { WidgetChat } from "./widget-chat";
 
 export default async function WidgetPage({
@@ -32,4 +34,3 @@ export default async function WidgetPage({
     />
   );
 }
-

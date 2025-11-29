@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { Loader2, Upload } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { type ReactNode, useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,7 +17,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Upload } from "lucide-react";
 
 interface UploadDocumentDialogProps {
   tenantId: string;
@@ -61,7 +62,7 @@ export function UploadDocumentDialog({ tenantId, children }: UploadDocumentDialo
       <DialogTrigger asChild>
         {children || (
           <Button>
-            <Upload className="w-4 h-4 mr-2" />
+            <Upload className="mr-2 h-4 w-4" />
             Upload document
           </Button>
         )}
@@ -111,12 +112,12 @@ export function UploadDocumentDialog({ tenantId, children }: UploadDocumentDialo
             <Button type="submit" disabled={isLoading}>
               {isLoading ? (
                 <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Uploading...
                 </>
               ) : (
                 <>
-                  <Upload className="w-4 h-4 mr-2" />
+                  <Upload className="mr-2 h-4 w-4" />
                   Upload
                 </>
               )}
@@ -127,4 +128,3 @@ export function UploadDocumentDialog({ tenantId, children }: UploadDocumentDialo
     </Dialog>
   );
 }
-

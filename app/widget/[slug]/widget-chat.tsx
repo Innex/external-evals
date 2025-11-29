@@ -1,13 +1,14 @@
 "use client";
 
 import { useChat } from "ai/react";
-import { useState, useRef, useEffect } from "react";
+import { Bot, Loader2, Minimize2, Send, User } from "lucide-react";
+import { nanoid } from "nanoid";
+import { useEffect, useRef, useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Bot, User, Loader2, Minimize2, Maximize2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { nanoid } from "nanoid";
 
 interface WidgetTenant {
   slug: string;
@@ -24,10 +25,10 @@ interface WidgetChatProps {
 }
 
 export function WidgetChat({ tenant, embedded = false }: WidgetChatProps) {
-  const [sessionId] = useState(() => 
-    typeof window !== "undefined" 
+  const [sessionId] = useState(() =>
+    typeof window !== "undefined"
       ? localStorage.getItem(`session-${tenant.slug}`) || nanoid()
-      : nanoid()
+      : nanoid(),
   );
   const [isMinimized, setIsMinimized] = useState(embedded);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -58,7 +59,7 @@ export function WidgetChat({ tenant, embedded = false }: WidgetChatProps) {
     }
   }, [messages]);
 
-  const primaryStyle = { 
+  const primaryStyle = {
     "--primary-color": tenant.primaryColor,
     "--accent-color": tenant.accentColor,
   } as React.CSSProperties;
@@ -67,33 +68,35 @@ export function WidgetChat({ tenant, embedded = false }: WidgetChatProps) {
     return (
       <button
         onClick={() => setIsMinimized(false)}
-        className="fixed bottom-4 right-4 w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105"
+        className="fixed bottom-4 right-4 flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition-transform hover:scale-105"
         style={{ backgroundColor: tenant.primaryColor }}
       >
-        <Bot className="w-6 h-6 text-white" />
+        <Bot className="h-6 w-6 text-white" />
       </button>
     );
   }
 
   return (
-    <div 
+    <div
       className={cn(
         "flex flex-col bg-background",
-        embedded ? "fixed bottom-4 right-4 w-96 h-[600px] rounded-xl shadow-2xl border overflow-hidden" : "h-screen"
+        embedded
+          ? "fixed bottom-4 right-4 h-[600px] w-96 overflow-hidden rounded-xl border shadow-2xl"
+          : "h-screen",
       )}
       style={primaryStyle}
     >
       {/* Header */}
-      <div 
+      <div
         className="flex items-center justify-between p-4 text-white"
         style={{ backgroundColor: tenant.primaryColor }}
       >
         <div className="flex items-center gap-3">
           {tenant.logoUrl ? (
-            <img src={tenant.logoUrl} alt={tenant.name} className="w-8 h-8 rounded" />
+            <img src={tenant.logoUrl} alt={tenant.name} className="h-8 w-8 rounded" />
           ) : (
-            <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
-              <Bot className="w-5 h-5" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20">
+              <Bot className="h-5 w-5" />
             </div>
           )}
           <div>
@@ -108,7 +111,7 @@ export function WidgetChat({ tenant, embedded = false }: WidgetChatProps) {
             className="text-white hover:bg-white/20"
             onClick={() => setIsMinimized(true)}
           >
-            <Minimize2 className="w-4 h-4" />
+            <Minimize2 className="h-4 w-4" />
           </Button>
         )}
       </div>
@@ -121,44 +124,50 @@ export function WidgetChat({ tenant, embedded = false }: WidgetChatProps) {
               key={message.id}
               className={cn(
                 "flex items-start gap-3",
-                message.role === "user" && "flex-row-reverse"
+                message.role === "user" && "flex-row-reverse",
               )}
             >
               <div
                 className={cn(
-                  "w-8 h-8 rounded-full flex items-center justify-center shrink-0",
-                  message.role === "assistant" 
-                    ? "bg-muted" 
-                    : ""
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+                  message.role === "assistant" ? "bg-muted" : "",
                 )}
-                style={message.role === "user" ? { backgroundColor: tenant.primaryColor } : undefined}
+                style={
+                  message.role === "user"
+                    ? { backgroundColor: tenant.primaryColor }
+                    : undefined
+                }
               >
                 {message.role === "assistant" ? (
-                  <Bot className="w-4 h-4 text-muted-foreground" />
+                  <Bot className="h-4 w-4 text-muted-foreground" />
                 ) : (
-                  <User className="w-4 h-4 text-white" />
+                  <User className="h-4 w-4 text-white" />
                 )}
               </div>
               <div
                 className={cn(
-                  "rounded-2xl px-4 py-2 max-w-[80%]",
+                  "max-w-[80%] rounded-2xl px-4 py-2",
                   message.role === "assistant"
-                    ? "bg-muted rounded-tl-none"
-                    : "text-white rounded-tr-none"
+                    ? "rounded-tl-none bg-muted"
+                    : "rounded-tr-none text-white",
                 )}
-                style={message.role === "user" ? { backgroundColor: tenant.primaryColor } : undefined}
+                style={
+                  message.role === "user"
+                    ? { backgroundColor: tenant.primaryColor }
+                    : undefined
+                }
               >
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                <p className="whitespace-pre-wrap text-sm">{message.content}</p>
               </div>
             </div>
           ))}
           {isLoading && (
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                <Bot className="w-4 h-4 text-muted-foreground" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
+                <Bot className="h-4 w-4 text-muted-foreground" />
               </div>
-              <div className="bg-muted rounded-2xl rounded-tl-none px-4 py-3">
-                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              <div className="rounded-2xl rounded-tl-none bg-muted px-4 py-3">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               </div>
             </div>
           )}
@@ -166,7 +175,7 @@ export function WidgetChat({ tenant, embedded = false }: WidgetChatProps) {
       </ScrollArea>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-4 border-t">
+      <form onSubmit={handleSubmit} className="border-t p-4">
         <div className="flex gap-2">
           <Input
             value={input}
@@ -175,19 +184,18 @@ export function WidgetChat({ tenant, embedded = false }: WidgetChatProps) {
             disabled={isLoading}
             className="flex-1"
           />
-          <Button 
-            type="submit" 
+          <Button
+            type="submit"
             disabled={isLoading || !input.trim()}
             style={{ backgroundColor: tenant.primaryColor }}
           >
-            <Send className="w-4 h-4" />
+            <Send className="h-4 w-4" />
           </Button>
         </div>
-        <p className="text-xs text-center text-muted-foreground mt-2">
+        <p className="mt-2 text-center text-xs text-muted-foreground">
           Powered by SupportHub
         </p>
       </form>
     </div>
   );
 }
-
