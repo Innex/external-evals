@@ -11,7 +11,7 @@ A multi-tenant, AI-powered customer support platform built with Next.js 16, feat
 - 📊 **Braintrust Tracing**: Every AI interaction is traced for evaluation
 - 🔄 **Datasets & Evals**: Save examples, annotate responses, and run evaluations
 - 🎨 **Customizable**: Per-tenant branding, instructions, and AI configuration
-- 🔐 **Google Auth**: Secure authentication via NextAuth.js
+- 🔐 **Clerk Auth**: Managed authentication with Google/GitHub/email/password
 
 ## Tech Stack
 
@@ -36,10 +36,19 @@ A multi-tenant, AI-powered customer support platform built with Next.js 16, feat
 
 ### 1. Clone and Install
 
+This repo uses **pnpm** exclusively. If you don't already have it, install it once:
+
+```bash
+corepack enable
+corepack prepare pnpm@latest --activate
+```
+
+Clone and install dependencies:
+
 ```bash
 git clone <repository-url>
 cd braintrust-evals-app
-npm install
+pnpm install
 ```
 
 ### 2. Set Up Environment Variables
@@ -57,11 +66,32 @@ Required variables:
 NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY="pk_test_..."
 CLERK_SECRET_KEY="sk_test_..."
 
-# Database (optional for demo)
-DATABASE_URL="postgresql://user:password@localhost:5432/braintrust_support"
+# Database (optional for demo, required for real data)
+DATABASE_URL="postgresql://postgres:postgres@localhost:5433/braintrust_support"
 
 # App
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
+```
+
+### Run PostgreSQL locally
+
+A ready-to-go Postgres + pgvector instance is included via Docker.
+
+```bash
+# Start the database in the background
+pnpm docker:db
+# or manually
+docker compose up db --detach
+```
+
+The service exposes `postgresql://postgres:postgres@localhost:5433/braintrust_support`.
+
+### Apply the schema
+
+Once the database is running, push the schema:
+
+```bash
+pnpm db:push
 ```
 
 ### 3. Set Up Database
@@ -75,27 +105,27 @@ CREATE EXTENSION IF NOT EXISTS vector;
 Push the schema:
 
 ```bash
-npm run db:push
+pnpm db:push
 ```
 
 ### 4. Run Development Server
 
 ```bash
-npm run dev
+pnpm dev --port 3001
 ```
 
-Visit [http://localhost:3000](http://localhost:3000)
+Visit [http://localhost:3001](http://localhost:3001)
 
 ## Project Structure
 
 ```
 ├── app/
 │   ├── api/
-│   │   ├── auth/         # NextAuth routes
 │   │   ├── tenants/      # Tenant CRUD
 │   │   └── widget/       # Chat API with tracing
 │   ├── dashboard/        # Admin dashboard
-│   ├── login/            # Authentication
+│   ├── sign-in/          # Clerk sign-in route
+│   ├── sign-up/          # Clerk sign-up route
 │   └── widget/           # Embeddable chat widget
 ├── components/
 │   └── ui/               # shadcn/ui components
@@ -104,7 +134,6 @@ Visit [http://localhost:3000](http://localhost:3000)
 │   └── schema.ts         # Database schema
 ├── lib/
 │   ├── ai/               # AI providers & embeddings
-│   ├── auth.ts           # NextAuth configuration
 │   ├── braintrust.ts     # Braintrust integration
 │   └── utils.ts          # Utilities
 └── public/
@@ -151,7 +180,7 @@ All AI interactions are logged to:
 
 Key entities:
 
-- **Users/Sessions**: NextAuth authentication
+- **Users/Sessions**: Clerk authentication
 - **Tenants**: Multi-tenant configuration (instructions, branding, API keys)
 - **Documents/DocumentChunks**: Knowledge base with vector embeddings
 - **Conversations/Messages**: Chat history
@@ -178,19 +207,19 @@ Key entities:
 
 ```bash
 # Run dev server
-npm run dev
+pnpm dev --port 3001
 
 # Push schema changes
-npm run db:push
+pnpm db:push
 
 # Generate migrations
-npm run db:generate
+pnpm db:generate
 
 # Open Drizzle Studio
-npm run db:studio
+pnpm db:studio
 
 # Lint
-npm run lint
+pnpm lint
 ```
 
 ## Architecture

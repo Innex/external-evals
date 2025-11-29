@@ -1,0 +1,21 @@
+# Build outputs
+.next
+dist
+build
+
+# Dependencies
+node_modules
+
+# Git
+.git
+
+# Generated assets
+*.log
+pnpm-lock.yaml
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Misc
+public/widget.js
+
