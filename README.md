@@ -71,6 +71,12 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5433/braintrust_support"
 
 # App
 NEXT_PUBLIC_APP_URL="http://localhost:3000"
+
+# Braintrust
+BRAINTRUST_API_KEY="bt_sk_..."
+# Use the numeric ID if available for faster BTQL queries, otherwise the name is used
+BRAINTRUST_PROJECT_ID="proj_123"
+BRAINTRUST_PROJECT_NAME="customer-support-platform"
 ```
 
 ### Run PostgreSQL locally
@@ -157,7 +163,7 @@ Visit [http://localhost:3001](http://localhost:3001)
 Add this script to your website:
 
 ```html
-<script 
+<script
   src="https://your-deployment.vercel.app/widget.js"
   data-tenant="your-bot-slug"
   async
@@ -167,6 +173,7 @@ Add this script to your website:
 ### Viewing Traces
 
 All AI interactions are logged to:
+
 1. The local database (accessible via Dashboard → Traces)
 2. Braintrust (if configured) for advanced analysis and evaluation
 
@@ -227,6 +234,7 @@ pnpm lint
 ### Multi-Tenant Isolation
 
 Each tenant has:
+
 - Unique slug for widget URL
 - Isolated API keys (stored encrypted)
 - Separate conversation and trace history
@@ -256,4 +264,3 @@ MIT
 - [Vercel AI SDK](https://sdk.vercel.ai/docs)
 - [Next.js Documentation](https://nextjs.org/docs)
 - [Drizzle ORM](https://orm.drizzle.team)
-
