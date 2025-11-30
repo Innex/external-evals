@@ -3,36 +3,32 @@ import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
 import { db } from "@/db";
-import { datasets, tenantMembers } from "@/db/schema";
+import { datasets } from "@/db/schema";
+import { getTenantForUserOrThrow } from "@/lib/tenant-access";
 
 import { RunEvalForm } from "./run-eval-form";
 
-export default async function NewEvalPage(): Promise<JSX.Element> {
+interface NewEvalPageProps {
+  params: Promise<{ tenantSlug: string }>;
+}
+
+export default async function NewEvalPage({ params }: NewEvalPageProps) {
   const user = await currentUser();
 
   if (!user) {
     redirect("/sign-in");
   }
 
-  const userTenants = await db.query.tenantMembers.findMany({
-    where: eq(tenantMembers.userId, user.id),
-    with: { tenant: true },
-  });
+  const { tenantSlug } = await params;
+  const { tenant } = await getTenantForUserOrThrow(user.id, tenantSlug);
 
-  if (userTenants.length === 0) {
-    redirect("/dashboard");
-  }
-
-  const activeTenant = userTenants[0].tenant;
-
-  // Get all datasets for this tenant
   const tenantDatasets = await db.query.datasets.findMany({
-    where: eq(datasets.tenantId, activeTenant.id),
+    where: eq(datasets.tenantId, tenant.id),
     orderBy: (ds, { desc }) => [desc(ds.createdAt)],
   });
 
   if (tenantDatasets.length === 0) {
-    redirect("/dashboard/datasets");
+    redirect(`/dashboard/${tenant.slug}/datasets`);
   }
 
   return (
@@ -45,7 +41,8 @@ export default async function NewEvalPage(): Promise<JSX.Element> {
       </div>
 
       <RunEvalForm
-        tenantId={activeTenant.id}
+        tenantId={tenant.id}
+        tenantSlug={tenant.slug}
         datasets={tenantDatasets.map((d) => ({
           id: d.id,
           name: d.name,

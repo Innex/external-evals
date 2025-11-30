@@ -12,33 +12,26 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { db } from "@/db";
-import { datasets, tenantMembers } from "@/db/schema";
+import { datasets } from "@/db/schema";
+import { getTenantForUserOrThrow } from "@/lib/tenant-access";
 import { formatRelativeTime } from "@/lib/utils";
 
-export default async function DatasetsPage(): Promise<JSX.Element> {
+interface DatasetsPageProps {
+  params: Promise<{ tenantSlug: string }>;
+}
+
+export default async function DatasetsPage({ params }: DatasetsPageProps) {
   const user = await currentUser();
 
   if (!user) {
     redirect("/sign-in");
   }
 
-  const userTenants = await db.query.tenantMembers.findMany({
-    where: eq(tenantMembers.userId, user.id),
-    with: { tenant: true },
-  });
-
-  if (userTenants.length === 0) {
-    return (
-      <div className="container px-6 py-8">
-        <p className="text-muted-foreground">Create a bot first to manage datasets.</p>
-      </div>
-    );
-  }
-
-  const activeTenant = userTenants[0].tenant;
+  const { tenantSlug } = await params;
+  const { tenant } = await getTenantForUserOrThrow(user.id, tenantSlug);
 
   const allDatasets = await db.query.datasets.findMany({
-    where: eq(datasets.tenantId, activeTenant.id),
+    where: eq(datasets.tenantId, tenant.id),
     orderBy: [desc(datasets.createdAt)],
   });
 
@@ -62,7 +55,7 @@ export default async function DatasetsPage(): Promise<JSX.Element> {
               Conversations → click a conversation → click &quot;Save to dataset&quot; on
               any response.
             </p>
-            <Link href="/dashboard/conversations">
+            <Link href={`/dashboard/${tenant.slug}/conversations`}>
               <button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
                 View conversations
               </button>
@@ -72,7 +65,10 @@ export default async function DatasetsPage(): Promise<JSX.Element> {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {allDatasets.map((dataset) => (
-            <Link key={dataset.id} href={`/dashboard/datasets/${dataset.id}`}>
+            <Link
+              key={dataset.id}
+              href={`/dashboard/${tenant.slug}/datasets/${dataset.id}`}
+            >
               <Card className="h-full cursor-pointer transition-shadow hover:border-primary/50 hover:shadow-md">
                 <CardHeader>
                   <CardTitle className="flex items-center justify-between text-lg">

@@ -1,19 +1,17 @@
 import { currentUser } from "@clerk/nextjs/server";
-import { eq } from "drizzle-orm";
 import { AlertCircle, ChevronRight, MessageSquare } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { db } from "@/db";
-import { tenantMembers } from "@/db/schema";
 import {
   type BraintrustTurn,
   fetchBraintrustTurns,
   formatTurnText,
   getTurnTimestamp,
 } from "@/lib/braintrust-chat";
+import { getTenantForUserOrThrow } from "@/lib/tenant-access";
 import { formatRelativeTime } from "@/lib/utils";
 
 interface ConversationSummary {
@@ -22,33 +20,27 @@ interface ConversationSummary {
   lastTurn: BraintrustTurn;
 }
 
-export default async function ConversationsPage(): Promise<JSX.Element> {
+interface ConversationsPageProps {
+  params: Promise<{ tenantSlug: string }>;
+}
+
+export default async function ConversationsPage({
+  params,
+}: ConversationsPageProps): Promise<JSX.Element> {
   const user = await currentUser();
 
   if (!user) {
     redirect("/sign-in");
   }
 
-  const userTenants = await db.query.tenantMembers.findMany({
-    where: eq(tenantMembers.userId, user.id),
-    with: { tenant: true },
-  });
-
-  if (userTenants.length === 0) {
-    return (
-      <div className="container px-6 py-8">
-        <p className="text-muted-foreground">Create a bot first to see conversations.</p>
-      </div>
-    );
-  }
-
-  const activeTenant = userTenants[0].tenant;
+  const { tenantSlug } = await params;
+  const { tenant } = await getTenantForUserOrThrow(user.id, tenantSlug);
 
   let turns: BraintrustTurn[] = [];
   let braintrustError: string | null = null;
 
   try {
-    turns = await fetchBraintrustTurns({ tenantId: activeTenant.id });
+    turns = await fetchBraintrustTurns({ tenantId: tenant.id });
   } catch (error) {
     console.error("Braintrust BTQL error:", error);
     braintrustError =
@@ -100,7 +92,7 @@ export default async function ConversationsPage(): Promise<JSX.Element> {
             return (
               <Link
                 key={conversation.sessionId}
-                href={`/dashboard/conversations/${conversation.sessionId}`}
+                href={`/dashboard/${tenant.slug}/conversations/${conversation.sessionId}`}
               >
                 <Card className="cursor-pointer transition-shadow hover:border-primary/50 hover:shadow-md">
                   <CardContent className="py-4">

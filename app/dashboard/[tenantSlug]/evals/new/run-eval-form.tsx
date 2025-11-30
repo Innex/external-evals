@@ -24,10 +24,15 @@ interface Dataset {
 
 interface RunEvalFormProps {
   tenantId: string;
+  tenantSlug: string;
   datasets: Dataset[];
 }
 
-export function RunEvalForm({ tenantId, datasets }: RunEvalFormProps): React.JSX.Element {
+export function RunEvalForm({
+  tenantId,
+  tenantSlug,
+  datasets,
+}: RunEvalFormProps): React.JSX.Element {
   const [name, setName] = useState("");
   const [datasetId, setDatasetId] = useState(datasets[0]?.id ?? "");
   const [isRunning, setIsRunning] = useState(false);
@@ -54,7 +59,7 @@ export function RunEvalForm({ tenantId, datasets }: RunEvalFormProps): React.JSX
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: name.trim() || undefined, // Optional - only send if provided
+          name: name.trim() || undefined,
           datasetId,
           tenantId,
         }),
@@ -72,7 +77,7 @@ export function RunEvalForm({ tenantId, datasets }: RunEvalFormProps): React.JSX
         description: "Your evaluation is running. You'll see results shortly.",
       });
 
-      router.push(`/dashboard/evals/${evalRecord.id}`);
+      router.push(`/dashboard/${tenantSlug}/evals/${evalRecord.id}`);
     } catch (error) {
       toast({
         title: "Error",

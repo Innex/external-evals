@@ -21,7 +21,6 @@ function formatInput(input: unknown): string {
     return input;
   }
   if (Array.isArray(input)) {
-    // Conversation history format
     return input
       .map((msg: { role?: string; content?: string }) => {
         const role = msg.role === "user" ? "User" : "Assistant";
@@ -64,7 +63,6 @@ export function DatasetRecordCard({
   const inputText = formatInput(record.input);
   const expectedText = formatExpected(record.expected);
 
-  // Simple heuristic: if text has more than 3 lines or is longer than ~200 chars, it's likely truncated
   const LINE_CLAMP = 3;
   const inputLineCount = inputText.split("\n").length;
   const expectedLineCount = expectedText.split("\n").length;
@@ -175,7 +173,6 @@ export function DatasetRecordCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Input */}
         <div>
           <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
             Input
@@ -206,7 +203,6 @@ export function DatasetRecordCard({
           )}
         </div>
 
-        {/* Expected output */}
         <div>
           <p className="mb-1 text-xs font-medium uppercase text-muted-foreground">
             Expected output

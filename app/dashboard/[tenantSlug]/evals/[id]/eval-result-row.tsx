@@ -38,7 +38,6 @@ function formatFull(value: unknown): string {
   if (value === null || value === undefined) return "—";
   if (typeof value === "string") return value;
   if (Array.isArray(value)) {
-    // For conversation history, format nicely
     return value
       .map((m) => {
         const msg = m as { role?: string; content?: string };
@@ -110,13 +109,12 @@ export function EvalResultRow({
 
     setIsExpanded(true);
 
-    // If we already have the data, don't fetch again
     if (expandedData) return;
 
     setIsLoading(true);
     try {
       const response = await fetch(
-        `/api/evals/experiment-row?experimentId=${encodeURIComponent(experimentId)}&rowId=${encodeURIComponent(row.id)}`,
+        `/api/evals/experiment-row?experimentId=${encodeURIComponent(experimentId)}&rowId=${encodeURIComponent(row.id)}&preview_length=-1`,
       );
       if (response.ok) {
         const data = await response.json();
@@ -133,7 +131,6 @@ export function EvalResultRow({
 
   return (
     <div className="border-b last:border-b-0">
-      {/* Collapsed row */}
       <button
         onClick={handleToggle}
         className="grid w-full grid-cols-[auto_1fr_1fr_1fr_auto] gap-6 px-6 py-4 text-left transition-colors hover:bg-muted/20"
@@ -166,7 +163,6 @@ export function EvalResultRow({
         </div>
       </button>
 
-      {/* Expanded content */}
       {isExpanded && (
         <div className="border-t bg-muted/10 px-6 py-6">
           {isLoading ? (
@@ -178,7 +174,6 @@ export function EvalResultRow({
             </div>
           ) : (
             <div className="grid gap-6 lg:grid-cols-3">
-              {/* Input */}
               <div>
                 <h4 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Input
@@ -190,7 +185,6 @@ export function EvalResultRow({
                 </div>
               </div>
 
-              {/* Output */}
               <div>
                 <h4 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Output
@@ -202,7 +196,6 @@ export function EvalResultRow({
                 </div>
               </div>
 
-              {/* Expected */}
               <div>
                 <h4 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Expected
@@ -216,7 +209,6 @@ export function EvalResultRow({
             </div>
           )}
 
-          {/* Scores detail */}
           {hasScores && (
             <div className="mt-6 border-t pt-6">
               <h4 className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">

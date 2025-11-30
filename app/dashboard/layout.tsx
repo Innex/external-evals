@@ -1,23 +1,17 @@
-import { currentUser } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-
-import { DashboardNav } from "./dashboard-nav";
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }): Promise<JSX.Element> {
-  const user = await currentUser();
+  // Use auth() - it's cached and doesn't count against Clerk rate limits
+  const { userId } = await auth();
 
-  if (!user) {
+  if (!userId) {
     redirect("/sign-in");
   }
 
-  return (
-    <div className="min-h-screen bg-background">
-      <DashboardNav />
-      <main className="pt-16">{children}</main>
-    </div>
-  );
+  return <>{children}</>;
 }

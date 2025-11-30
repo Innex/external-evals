@@ -166,7 +166,6 @@ export function SaveToDatasetDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Dataset selection */}
           <div className="space-y-2">
             <Label>Dataset</Label>
             {showNewDatasetForm ? (
@@ -217,7 +216,6 @@ export function SaveToDatasetDialog({
             )}
           </div>
 
-          {/* Input preview */}
           <div className="space-y-2">
             <Label>Input (conversation history)</Label>
             <div className="max-h-40 overflow-y-auto rounded-md border bg-muted/50 p-3">
@@ -232,7 +230,6 @@ export function SaveToDatasetDialog({
             </div>
           </div>
 
-          {/* Expected output */}
           <div className="space-y-2">
             <Label htmlFor="expected">Expected response</Label>
             <Textarea

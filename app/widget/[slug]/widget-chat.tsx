@@ -119,48 +119,54 @@ export function WidgetChat({ tenant, embedded = false }: WidgetChatProps) {
       {/* Messages */}
       <ScrollArea className="flex-1 p-4" ref={scrollRef}>
         <div className="space-y-4">
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={cn(
-                "flex items-start gap-3",
-                message.role === "user" && "flex-row-reverse",
-              )}
-            >
+          {messages.map((message) => {
+            if (message.role === "assistant" && !message.content.trim()) {
+              return null;
+            }
+
+            return (
               <div
+                key={message.id}
                 className={cn(
-                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-                  message.role === "assistant" ? "bg-muted" : "",
+                  "flex items-start gap-3",
+                  message.role === "user" && "flex-row-reverse",
                 )}
-                style={
-                  message.role === "user"
-                    ? { backgroundColor: tenant.primaryColor }
-                    : undefined
-                }
               >
-                {message.role === "assistant" ? (
-                  <Bot className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <User className="h-4 w-4 text-white" />
-                )}
+                <div
+                  className={cn(
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+                    message.role === "assistant" ? "bg-muted" : "",
+                  )}
+                  style={
+                    message.role === "user"
+                      ? { backgroundColor: tenant.primaryColor }
+                      : undefined
+                  }
+                >
+                  {message.role === "assistant" ? (
+                    <Bot className="h-4 w-4 text-muted-foreground" />
+                  ) : (
+                    <User className="h-4 w-4 text-white" />
+                  )}
+                </div>
+                <div
+                  className={cn(
+                    "max-w-[80%] rounded-2xl px-4 py-2",
+                    message.role === "assistant"
+                      ? "rounded-tl-none bg-muted"
+                      : "rounded-tr-none text-white",
+                  )}
+                  style={
+                    message.role === "user"
+                      ? { backgroundColor: tenant.primaryColor }
+                      : undefined
+                  }
+                >
+                  <p className="whitespace-pre-wrap text-sm">{message.content}</p>
+                </div>
               </div>
-              <div
-                className={cn(
-                  "max-w-[80%] rounded-2xl px-4 py-2",
-                  message.role === "assistant"
-                    ? "rounded-tl-none bg-muted"
-                    : "rounded-tr-none text-white",
-                )}
-                style={
-                  message.role === "user"
-                    ? { backgroundColor: tenant.primaryColor }
-                    : undefined
-                }
-              >
-                <p className="whitespace-pre-wrap text-sm">{message.content}</p>
-              </div>
-            </div>
-          ))}
+            );
+          })}
           {isLoading && (
             <div className="flex items-start gap-3">
               <div className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">

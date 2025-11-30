@@ -12,35 +12,28 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { db } from "@/db";
-import { documents, tenantMembers } from "@/db/schema";
+import { documents } from "@/db/schema";
+import { getTenantForUserOrThrow } from "@/lib/tenant-access";
 import { formatRelativeTime, truncate } from "@/lib/utils";
 
-import { UploadDocumentDialog } from "./upload-document-dialog";
+import { UploadDocumentDialog } from "../../documents/upload-document-dialog";
 
-export default async function DocumentsPage() {
+interface DocumentsPageProps {
+  params: Promise<{ tenantSlug: string }>;
+}
+
+export default async function DocumentsPage({ params }: DocumentsPageProps) {
   const user = await currentUser();
 
   if (!user) {
     redirect("/sign-in");
   }
 
-  const userTenants = await db.query.tenantMembers.findMany({
-    where: eq(tenantMembers.userId, user.id),
-    with: { tenant: true },
-  });
-
-  if (userTenants.length === 0) {
-    return (
-      <div className="container px-6 py-8">
-        <p className="text-muted-foreground">Create a bot first to upload documents.</p>
-      </div>
-    );
-  }
-
-  const activeTenant = userTenants[0].tenant;
+  const { tenantSlug } = await params;
+  const { tenant } = await getTenantForUserOrThrow(user.id, tenantSlug);
 
   const allDocuments = await db.query.documents.findMany({
-    where: eq(documents.tenantId, activeTenant.id),
+    where: eq(documents.tenantId, tenant.id),
     orderBy: [desc(documents.createdAt)],
     with: {
       chunks: true,
@@ -56,7 +49,7 @@ export default async function DocumentsPage() {
             Upload documents to train your support bot
           </p>
         </div>
-        <UploadDocumentDialog tenantId={activeTenant.id} />
+        <UploadDocumentDialog tenantId={tenant.id} />
       </div>
 
       {allDocuments.length === 0 ? (
@@ -67,7 +60,7 @@ export default async function DocumentsPage() {
             <p className="mb-4 text-muted-foreground">
               Upload markdown documents to give your bot knowledge about your product.
             </p>
-            <UploadDocumentDialog tenantId={activeTenant.id}>
+            <UploadDocumentDialog tenantId={tenant.id}>
               <Button>
                 <Upload className="mr-2 h-4 w-4" />
                 Upload first document

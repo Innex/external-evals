@@ -7,22 +7,22 @@ import { notFound, redirect } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { db } from "@/db";
-import { datasets, tenantMembers } from "@/db/schema";
+import { datasets } from "@/db/schema";
 import {
   type BraintrustTurn,
   fetchBraintrustTurns,
   formatTurnText,
   getTurnTimestamp,
 } from "@/lib/braintrust-chat";
+import { getTenantForUserOrThrow } from "@/lib/tenant-access";
 import { formatRelativeTime } from "@/lib/utils";
 
 import { SaveToDatasetDialog } from "./save-to-dataset-dialog";
 
 interface ConversationDetailPageProps {
-  params: Promise<{ sessionId: string }>;
+  params: Promise<{ tenantSlug: string; sessionId: string }>;
 }
 
-// Build conversation history up to (and including) a specific turn
 function buildConversationHistory(
   turns: BraintrustTurn[],
   upToIndex: number,
@@ -38,7 +38,6 @@ function buildConversationHistory(
       history.push({ role: "user", content: userMsg });
     }
     if (botMsg && i < upToIndex) {
-      // Include bot response for all turns before the current one
       history.push({ role: "assistant", content: botMsg });
     }
   }
@@ -49,35 +48,24 @@ function buildConversationHistory(
 export default async function ConversationDetailPage({
   params,
 }: ConversationDetailPageProps): Promise<JSX.Element> {
-  const { sessionId } = await params;
+  const { tenantSlug, sessionId } = await params;
   const user = await currentUser();
 
   if (!user) {
     redirect("/sign-in");
   }
 
-  const userTenants = await db.query.tenantMembers.findMany({
-    where: eq(tenantMembers.userId, user.id),
-    with: { tenant: true },
-  });
+  const { tenant } = await getTenantForUserOrThrow(user.id, tenantSlug);
 
-  if (userTenants.length === 0) {
-    notFound();
-  }
-
-  const activeTenant = userTenants[0].tenant;
-
-  // Fetch datasets for this tenant
   const tenantDatasets = await db.query.datasets.findMany({
-    where: eq(datasets.tenantId, activeTenant.id),
+    where: eq(datasets.tenantId, tenant.id),
     orderBy: (ds, { desc }) => [desc(ds.createdAt)],
   });
 
-  // Fetch all turns for this tenant and filter by sessionId
-  const allTurns = await fetchBraintrustTurns({ tenantId: activeTenant.id });
+  const allTurns = await fetchBraintrustTurns({ tenantId: tenant.id });
   const turns = allTurns
     .filter((t) => t.sessionId === sessionId)
-    .sort((a, b) => getTurnTimestamp(a) - getTurnTimestamp(b)); // oldest first
+    .sort((a, b) => getTurnTimestamp(a) - getTurnTimestamp(b));
 
   if (turns.length === 0) {
     notFound();
@@ -89,7 +77,7 @@ export default async function ConversationDetailPage({
     <div className="container space-y-6 px-6 py-8">
       <div className="flex items-center gap-4">
         <Link
-          href="/dashboard/conversations"
+          href={`/dashboard/${tenant.slug}/conversations`}
           className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -115,7 +103,6 @@ export default async function ConversationDetailPage({
 
           return (
             <div key={turn.id} className="space-y-3">
-              {/* User message */}
               {userMessage && (
                 <div className="flex gap-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
@@ -132,7 +119,6 @@ export default async function ConversationDetailPage({
                 </div>
               )}
 
-              {/* Bot response */}
               {botMessage && (
                 <div className="flex gap-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
@@ -146,7 +132,7 @@ export default async function ConversationDetailPage({
                           {turn.modelProvider ?? "unknown"} · {turn.modelName ?? "n/a"}
                         </span>
                         <SaveToDatasetDialog
-                          tenantId={activeTenant.id}
+                          tenantId={tenant.id}
                           sessionId={sessionId}
                           turnId={turn.id}
                           conversationHistory={buildConversationHistory(turns, turnIndex)}

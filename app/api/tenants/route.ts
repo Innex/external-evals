@@ -1,5 +1,6 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -91,6 +92,11 @@ export async function POST(request: Request): Promise<Response> {
       userId: dbUser.id,
       tenantId: tenant.id,
       role: "owner",
+    });
+
+    cookies().set("activeTenantId", tenant.id, {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
     });
 
     return NextResponse.json(tenant, { status: 201 });

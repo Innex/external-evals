@@ -31,7 +31,6 @@ export const widgetPositionEnum = pgEnum("widget_position", [
   "top_right",
   "top_left",
 ]);
-export const messageRoleEnum = pgEnum("message_role", ["user", "assistant", "system"]);
 export const evalStatusEnum = pgEnum("eval_status", [
   "pending",
   "running",
@@ -198,95 +197,9 @@ export const documentChunks = pgTable(
 );
 
 // ============================================
-// Conversation & Message Tables
+// NOTE: Conversations and traces are stored in Braintrust, not Postgres.
+// We query them via BTQL API. This keeps Postgres lean and avoids O(messages) storage.
 // ============================================
-
-export const conversations = pgTable(
-  "conversations",
-  {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => nanoid()),
-    sessionId: text("session_id").notNull(), // Anonymous session ID for end users
-    metadata: jsonb("metadata"),
-    tenantId: text("tenant_id")
-      .notNull()
-      .references(() => tenants.id, { onDelete: "cascade" }),
-    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
-  },
-  (conv) => [
-    index("conversations_tenant_idx").on(conv.tenantId),
-    index("conversations_session_idx").on(conv.sessionId),
-  ],
-);
-
-export const messages = pgTable(
-  "messages",
-  {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => nanoid()),
-    role: messageRoleEnum("role").notNull(),
-    content: text("content").notNull(),
-    metadata: jsonb("metadata"),
-    conversationId: text("conversation_id")
-      .notNull()
-      .references(() => conversations.id, { onDelete: "cascade" }),
-    traceId: text("trace_id").references(() => traces.id),
-    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
-  },
-  (msg) => [index("messages_conversation_idx").on(msg.conversationId)],
-);
-
-// ============================================
-// Tracing Tables
-// ============================================
-
-export const traces = pgTable(
-  "traces",
-  {
-    id: text("id")
-      .primaryKey()
-      .$defaultFn(() => nanoid()),
-    braintrustId: text("braintrust_id"),
-
-    // Input/Output
-    input: jsonb("input").notNull(),
-    output: jsonb("output"),
-    expectedOutput: jsonb("expected_output"), // For annotations
-
-    // Metadata
-    modelProvider: modelProviderEnum("model_provider").notNull(),
-    modelName: text("model_name").notNull(),
-    promptTokens: integer("prompt_tokens"),
-    completionTokens: integer("completion_tokens"),
-    latencyMs: integer("latency_ms"),
-
-    // Scores and annotations
-    scores: jsonb("scores"),
-    metadata: jsonb("metadata"),
-    tags: text("tags").array(),
-
-    // Annotation status
-    isAnnotated: boolean("is_annotated").default(false).notNull(),
-    annotatedAt: timestamp("annotated_at", { mode: "date" }),
-    annotatedBy: text("annotated_by"),
-
-    tenantId: text("tenant_id")
-      .notNull()
-      .references(() => tenants.id, { onDelete: "cascade" }),
-    conversationId: text("conversation_id").references(() => conversations.id),
-
-    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
-    updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
-  },
-  (trace) => [
-    index("traces_tenant_idx").on(trace.tenantId),
-    index("traces_conversation_idx").on(trace.conversationId),
-    index("traces_braintrust_idx").on(trace.braintrustId),
-  ],
-);
 
 // ============================================
 // Dataset & Eval Tables
@@ -377,8 +290,6 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
 export const tenantsRelations = relations(tenants, ({ many }) => ({
   members: many(tenantMembers),
   documents: many(documents),
-  conversations: many(conversations),
-  traces: many(traces),
   datasets: many(datasets),
   evals: many(evals),
 }));
@@ -407,38 +318,6 @@ export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
     fields: [documentChunks.documentId],
     references: [documents.id],
   }),
-}));
-
-export const conversationsRelations = relations(conversations, ({ one, many }) => ({
-  tenant: one(tenants, {
-    fields: [conversations.tenantId],
-    references: [tenants.id],
-  }),
-  messages: many(messages),
-  traces: many(traces),
-}));
-
-export const messagesRelations = relations(messages, ({ one }) => ({
-  conversation: one(conversations, {
-    fields: [messages.conversationId],
-    references: [conversations.id],
-  }),
-  trace: one(traces, {
-    fields: [messages.traceId],
-    references: [traces.id],
-  }),
-}));
-
-export const tracesRelations = relations(traces, ({ one, many }) => ({
-  tenant: one(tenants, {
-    fields: [traces.tenantId],
-    references: [tenants.id],
-  }),
-  conversation: one(conversations, {
-    fields: [traces.conversationId],
-    references: [conversations.id],
-  }),
-  messages: many(messages),
 }));
 
 export const datasetsRelations = relations(datasets, ({ one, many }) => ({
@@ -471,8 +350,5 @@ export type NewTenant = typeof tenants.$inferInsert;
 export type TenantMember = typeof tenantMembers.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type DocumentChunk = typeof documentChunks.$inferSelect;
-export type Conversation = typeof conversations.$inferSelect;
-export type Message = typeof messages.$inferSelect;
-export type Trace = typeof traces.$inferSelect;
 export type Dataset = typeof datasets.$inferSelect;
 export type Eval = typeof evals.$inferSelect;

@@ -8,39 +8,30 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { db } from "@/db";
-import { datasets, evals, tenantMembers } from "@/db/schema";
+import { datasets, evals } from "@/db/schema";
+import { getTenantForUserOrThrow } from "@/lib/tenant-access";
 import { formatRelativeTime } from "@/lib/utils";
 
-export default async function EvalsPage() {
+interface EvalsPageProps {
+  params: Promise<{ tenantSlug: string }>;
+}
+
+export default async function EvalsPage({ params }: EvalsPageProps) {
   const user = await currentUser();
 
   if (!user) {
     redirect("/sign-in");
   }
 
-  const userTenants = await db.query.tenantMembers.findMany({
-    where: eq(tenantMembers.userId, user.id),
-    with: { tenant: true },
-  });
+  const { tenantSlug } = await params;
+  const { tenant } = await getTenantForUserOrThrow(user.id, tenantSlug);
 
-  if (userTenants.length === 0) {
-    return (
-      <div className="container px-6 py-8">
-        <p className="text-muted-foreground">Create a bot first to run evaluations.</p>
-      </div>
-    );
-  }
-
-  const activeTenant = userTenants[0].tenant;
-
-  // Get all datasets for this tenant
   const tenantDatasets = await db.query.datasets.findMany({
-    where: eq(datasets.tenantId, activeTenant.id),
+    where: eq(datasets.tenantId, tenant.id),
   });
 
-  // Get all evals
   const allEvals = await db.query.evals.findMany({
-    where: eq(evals.tenantId, activeTenant.id),
+    where: eq(evals.tenantId, tenant.id),
     orderBy: [desc(evals.createdAt)],
     with: {
       dataset: true,
@@ -55,11 +46,11 @@ export default async function EvalsPage() {
         <div>
           <h1 className="text-3xl font-bold">Evaluations</h1>
           <p className="text-muted-foreground">
-            Run and view evaluation results for your support bot
+            Run and view evaluation results for your bot
           </p>
         </div>
         {hasDatasets && (
-          <Link href="/dashboard/evals/new">
+          <Link href={`/dashboard/${tenant.slug}/evals/new`}>
             <Button>
               <Play className="mr-2 h-4 w-4" />
               Run evaluation
@@ -79,14 +70,14 @@ export default async function EvalsPage() {
                 : "Create a dataset first by annotating traces, then run evaluations."}
             </p>
             {hasDatasets ? (
-              <Link href="/dashboard/evals/new">
+              <Link href={`/dashboard/${tenant.slug}/evals/new`}>
                 <Button>
                   <Play className="mr-2 h-4 w-4" />
                   Run first evaluation
                 </Button>
               </Link>
             ) : (
-              <Link href="/dashboard/conversations">
+              <Link href={`/dashboard/${tenant.slug}/conversations`}>
                 <Button>View conversations</Button>
               </Link>
             )}
@@ -95,7 +86,7 @@ export default async function EvalsPage() {
       ) : (
         <div className="space-y-4">
           {allEvals.map((evalRun) => (
-            <Link key={evalRun.id} href={`/dashboard/evals/${evalRun.id}`}>
+            <Link key={evalRun.id} href={`/dashboard/${tenant.slug}/evals/${evalRun.id}`}>
               <Card className="cursor-pointer transition-shadow hover:shadow-md">
                 <CardContent className="py-4">
                   <div className="flex items-center justify-between">
@@ -163,7 +154,6 @@ function StatusBadge({ status }: { status: string }) {
 function SummaryDisplay({ summary }: { summary: Record<string, unknown> }) {
   const items: { key: string; value: string }[] = [];
 
-  // Handle scores object (e.g., { Factuality: { score: 0.5, name: "Factuality" } })
   if (summary.scores && typeof summary.scores === "object") {
     for (const [name, data] of Object.entries(
       summary.scores as Record<string, unknown>,
@@ -178,7 +168,6 @@ function SummaryDisplay({ summary }: { summary: Record<string, unknown> }) {
     }
   }
 
-  // Handle metrics object
   if (summary.metrics && typeof summary.metrics === "object") {
     for (const [name, data] of Object.entries(
       summary.metrics as Record<string, unknown>,
@@ -193,7 +182,6 @@ function SummaryDisplay({ summary }: { summary: Record<string, unknown> }) {
     }
   }
 
-  // Handle simple key-value pairs (for backwards compatibility)
   for (const [key, value] of Object.entries(summary)) {
     if (
       key !== "scores" &&

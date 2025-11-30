@@ -1,11 +1,11 @@
 import { currentUser } from "@clerk/nextjs/server";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/db";
-import { tenantMembers, tenants } from "@/db/schema";
+import { datasets, documents, evals, tenantMembers, tenants } from "@/db/schema";
 
 const updateTenantSchema = z.object({
   name: z.string().min(1).max(100).optional(),
@@ -103,6 +103,60 @@ export async function GET(
     return NextResponse.json(tenant);
   } catch (error) {
     console.error("Error fetching tenant:", error);
+    return NextResponse.json({ message: "Internal server error" }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<Response> {
+  try {
+    const { id } = await params;
+    const user = await currentUser();
+
+    if (!user) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    }
+
+    const membership = await db.query.tenantMembers.findFirst({
+      where: and(eq(tenantMembers.userId, user.id), eq(tenantMembers.tenantId, id)),
+    });
+
+    if (!membership || membership.role !== "owner") {
+      return NextResponse.json(
+        { message: "Only the bot owner can delete this bot" },
+        { status: 403 },
+      );
+    }
+
+    // Delete tenant and all related data
+    // Note: conversations/traces are stored in Braintrust, not Postgres
+    await db.transaction(async (tx) => {
+      // Get all dataset IDs for this tenant to delete evals first
+      const tenantDatasetIds = await tx
+        .select({ id: datasets.id })
+        .from(datasets)
+        .where(eq(datasets.tenantId, id));
+
+      if (tenantDatasetIds.length > 0) {
+        await tx.delete(evals).where(
+          inArray(
+            evals.datasetId,
+            tenantDatasetIds.map((ds) => ds.id),
+          ),
+        );
+      }
+
+      await tx.delete(datasets).where(eq(datasets.tenantId, id));
+      await tx.delete(documents).where(eq(documents.tenantId, id));
+      await tx.delete(tenantMembers).where(eq(tenantMembers.tenantId, id));
+      await tx.delete(tenants).where(eq(tenants.id, id));
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting tenant:", error);
     return NextResponse.json({ message: "Internal server error" }, { status: 500 });
   }
 }

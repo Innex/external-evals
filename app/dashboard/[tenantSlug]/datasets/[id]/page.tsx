@@ -9,44 +9,35 @@ import { Card, CardContent } from "@/components/ui/card";
 import { db } from "@/db";
 import { datasets } from "@/db/schema";
 import { fetchDatasetRecords } from "@/lib/braintrust-dataset";
+import { getTenantForUserOrThrow } from "@/lib/tenant-access";
 import { formatRelativeTime } from "@/lib/utils";
 
 import { DatasetRecordCard } from "./dataset-record-card";
 
 interface DatasetDetailPageProps {
-  params: Promise<{ id: string }>;
+  params: Promise<{ tenantSlug: string; id: string }>;
 }
 
 export default async function DatasetDetailPage({
   params,
 }: DatasetDetailPageProps): Promise<JSX.Element> {
-  const { id: datasetId } = await params;
+  const { tenantSlug, id: datasetId } = await params;
   const user = await currentUser();
 
   if (!user) {
     redirect("/sign-in");
   }
 
-  // Get the dataset
+  const { tenant } = await getTenantForUserOrThrow(user.id, tenantSlug);
+
   const dataset = await db.query.datasets.findFirst({
     where: eq(datasets.id, datasetId),
   });
 
-  if (!dataset) {
+  if (!dataset || dataset.tenantId !== tenant.id) {
     notFound();
   }
 
-  // Verify user has access to this tenant
-  const membership = await db.query.tenantMembers.findFirst({
-    where: (tm, { and, eq: equals }) =>
-      and(equals(tm.userId, user.id), equals(tm.tenantId, dataset.tenantId)),
-  });
-
-  if (!membership) {
-    notFound();
-  }
-
-  // Fetch records from Braintrust
   let records: Awaited<ReturnType<typeof fetchDatasetRecords>> = [];
   let fetchError: string | null = null;
 
@@ -61,7 +52,7 @@ export default async function DatasetDetailPage({
     <div className="container space-y-6 px-6 py-8">
       <div className="flex items-center gap-4">
         <Link
-          href="/dashboard/datasets"
+          href={`/dashboard/${tenant.slug}/datasets`}
           className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
