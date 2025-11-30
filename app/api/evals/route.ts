@@ -54,29 +54,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: "Tenant not found" }, { status: 404 });
   }
 
-  // Validate tenant has required configuration
-  if (!tenant.modelProvider) {
-    return NextResponse.json(
-      { error: "Tenant has no model provider configured" },
-      { status: 400 },
-    );
-  }
-
-  // Get the API key for the provider
-  const apiKeyMap: Record<string, string | null> = {
-    openai: tenant.openaiApiKey,
-    anthropic: tenant.anthropicApiKey,
-    google: tenant.googleApiKey,
-  };
-  const apiKey = apiKeyMap[tenant.modelProvider];
-
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: `No API key configured for ${tenant.modelProvider}` },
-      { status: 400 },
-    );
-  }
-
   // Get the dataset
   const dataset = await db.query.datasets.findFirst({
     where: eq(datasets.id, datasetId),

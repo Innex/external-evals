@@ -1,8 +1,8 @@
 "use client";
 
-import { Loader2, Save } from "lucide-react";
+import { AlertCircle, Loader2, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -25,7 +25,19 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { Tenant } from "@/db/schema";
-import { MODEL_OPTIONS } from "@/lib/ai/providers";
+
+type ModelProvider = "openai" | "anthropic" | "google";
+
+interface ProviderConfig {
+  providers: ModelProvider[];
+  modelOptions: Record<string, { value: string; label: string }[]>;
+}
+
+const PROVIDER_LABELS: Record<ModelProvider, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google: "Google AI",
+};
 
 interface SettingsFormProps {
   tenant: Tenant;
@@ -34,6 +46,7 @@ interface SettingsFormProps {
 export function SettingsForm({ tenant }: SettingsFormProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [providerConfig, setProviderConfig] = useState<ProviderConfig | null>(null);
 
   // Basic settings
   const [name, setName] = useState(tenant.name);
@@ -41,11 +54,27 @@ export function SettingsForm({ tenant }: SettingsFormProps) {
   const [instructions, setInstructions] = useState(tenant.instructions);
 
   // AI settings
-  const [modelProvider, setModelProvider] = useState<"openai" | "anthropic" | "google">(
-    tenant.modelProvider as "openai" | "anthropic" | "google",
+  const [modelProvider, setModelProvider] = useState<ModelProvider>(
+    tenant.modelProvider as ModelProvider,
   );
   const [modelName, setModelName] = useState(tenant.modelName);
   const [temperature, setTemperature] = useState(tenant.temperature);
+
+  // Fetch available providers on mount
+  useEffect(() => {
+    async function fetchConfig() {
+      try {
+        const response = await fetch("/api/config/providers");
+        if (response.ok) {
+          const config = (await response.json()) as ProviderConfig;
+          setProviderConfig(config);
+        }
+      } catch (error) {
+        console.error("Failed to fetch provider config:", error);
+      }
+    }
+    fetchConfig();
+  }, []);
 
   // Visual settings
   const [primaryColor, setPrimaryColor] = useState(tenant.primaryColor);
@@ -138,23 +167,37 @@ export function SettingsForm({ tenant }: SettingsFormProps) {
             <CardDescription>Choose your AI provider and model settings</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {providerConfig && !providerConfig.providers.includes(modelProvider) && (
+              <div className="flex items-start gap-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                <p className="text-sm text-amber-700 dark:text-amber-400">
+                  The current provider ({PROVIDER_LABELS[modelProvider]}) is no longer
+                  available. Please select a different provider.
+                </p>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="provider">Provider</Label>
                 <Select
                   value={modelProvider}
                   onValueChange={(v) => {
-                    setModelProvider(v as "openai" | "anthropic" | "google");
-                    setModelName(MODEL_OPTIONS[v as keyof typeof MODEL_OPTIONS][0].value);
+                    const newProvider = v as ModelProvider;
+                    setModelProvider(newProvider);
+                    if (providerConfig?.modelOptions[newProvider]?.length) {
+                      setModelName(providerConfig.modelOptions[newProvider][0].value);
+                    }
                   }}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="openai">OpenAI</SelectItem>
-                    <SelectItem value="anthropic">Anthropic</SelectItem>
-                    <SelectItem value="google">Google AI</SelectItem>
+                    {providerConfig?.providers.map((provider) => (
+                      <SelectItem key={provider} value={provider}>
+                        {PROVIDER_LABELS[provider]}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -165,7 +208,7 @@ export function SettingsForm({ tenant }: SettingsFormProps) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {MODEL_OPTIONS[modelProvider].map((model) => (
+                    {providerConfig?.modelOptions[modelProvider]?.map((model) => (
                       <SelectItem key={model.value} value={model.value}>
                         {model.label}
                       </SelectItem>

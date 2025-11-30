@@ -120,36 +120,36 @@ async function executeChatTurn<T>(
         metadata: spanMetadata,
       });
 
-      const embeddingKey = tenant.openaiApiKey ?? process.env.OPENAI_API_KEY;
+      // OpenAI key is used for embeddings (knowledge base search)
+      const embeddingKey = process.env.OPENAI_API_KEY;
 
-      const tools =
-        embeddingKey !== undefined
-          ? {
-              knowledgeBase: {
-                description:
-                  "Search the tenant's uploaded documents for factual context related to the question.",
-                parameters: z.object({
-                  query: z
-                    .string()
-                    .describe("A precise natural-language question to search for."),
-                }),
-                execute: async ({ query }: { query: string }) => {
-                  const searchQuery = query.trim();
-                  const context = await getRelevantContext(
-                    tenant.id,
-                    searchQuery,
-                    embeddingKey,
-                  );
+      const tools = embeddingKey
+        ? {
+            knowledgeBase: {
+              description:
+                "Search the tenant's uploaded documents for factual context related to the question.",
+              parameters: z.object({
+                query: z
+                  .string()
+                  .describe("A precise natural-language question to search for."),
+              }),
+              execute: async ({ query }: { query: string }) => {
+                const searchQuery = query.trim();
+                const context = await getRelevantContext(
+                  tenant.id,
+                  searchQuery,
+                  embeddingKey,
+                );
 
-                  if (!context) {
-                    return "No relevant context found in the knowledge base.";
-                  }
+                if (!context) {
+                  return "No relevant context found in the knowledge base.";
+                }
 
-                  return context;
-                },
+                return context;
               },
-            }
-          : undefined;
+            },
+          }
+        : undefined;
 
       const systemPrompt = buildSystemPrompt(
         tenant.instructions,

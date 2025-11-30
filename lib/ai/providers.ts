@@ -6,63 +6,66 @@ import type { Tenant } from "@/db/schema";
 
 export type ModelProvider = "openai" | "anthropic" | "google";
 
-export function getAIProvider(tenant: Tenant) {
-  const provider = tenant.modelProvider;
-
+/**
+ * Get API key for a provider from environment variables.
+ * API keys are platform-level, not per-tenant.
+ */
+export function getApiKeyForProvider(provider: ModelProvider): string | undefined {
   switch (provider) {
     case "openai":
-      if (!tenant.openaiApiKey) {
-        throw new Error("OpenAI API key not configured");
-      }
-      return createOpenAI({
-        apiKey: tenant.openaiApiKey,
-      });
-
+      return process.env.OPENAI_API_KEY;
     case "anthropic":
-      if (!tenant.anthropicApiKey) {
-        throw new Error("Anthropic API key not configured");
-      }
-      return createAnthropic({
-        apiKey: tenant.anthropicApiKey,
-      });
-
+      return process.env.ANTHROPIC_API_KEY;
     case "google":
-      if (!tenant.googleApiKey) {
-        throw new Error("Google API key not configured");
-      }
-      return createGoogleGenerativeAI({
-        apiKey: tenant.googleApiKey,
-      });
-
+      return process.env.GOOGLE_API_KEY;
     default:
-      throw new Error(`Unknown provider: ${provider}`);
+      return undefined;
   }
-}
-
-export function getModel(tenant: Tenant) {
-  const provider = getAIProvider(tenant);
-  return provider(tenant.modelName);
 }
 
 /**
- * Get a model instance with explicit provider, model name, and API key.
- * Useful when you don't have a full Tenant object.
+ * Check which providers are available (have API keys configured).
  */
-export function getModelWithConfig(
-  provider: ModelProvider,
-  modelName: string,
-  apiKey: string,
-) {
+export function getAvailableProviders(): ModelProvider[] {
+  const providers: ModelProvider[] = [];
+  if (process.env.OPENAI_API_KEY) providers.push("openai");
+  if (process.env.ANTHROPIC_API_KEY) providers.push("anthropic");
+  if (process.env.GOOGLE_API_KEY) providers.push("google");
+  return providers;
+}
+
+export function getAIProvider(provider: ModelProvider) {
+  const apiKey = getApiKeyForProvider(provider);
+
   switch (provider) {
     case "openai":
-      return createOpenAI({ apiKey })(modelName);
+      if (!apiKey) {
+        throw new Error("OpenAI API key not configured. Set OPENAI_API_KEY env var.");
+      }
+      return createOpenAI({ apiKey });
+
     case "anthropic":
-      return createAnthropic({ apiKey })(modelName);
+      if (!apiKey) {
+        throw new Error(
+          "Anthropic API key not configured. Set ANTHROPIC_API_KEY env var.",
+        );
+      }
+      return createAnthropic({ apiKey });
+
     case "google":
-      return createGoogleGenerativeAI({ apiKey })(modelName);
+      if (!apiKey) {
+        throw new Error("Google API key not configured. Set GOOGLE_API_KEY env var.");
+      }
+      return createGoogleGenerativeAI({ apiKey });
+
     default:
       throw new Error(`Unknown provider: ${provider}`);
   }
+}
+
+export function getModel(tenant: Pick<Tenant, "modelProvider" | "modelName">) {
+  const provider = getAIProvider(tenant.modelProvider);
+  return provider(tenant.modelName);
 }
 
 export const MODEL_OPTIONS = {
@@ -82,3 +85,15 @@ export const MODEL_OPTIONS = {
     { value: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
   ],
 } as const;
+
+/**
+ * Get model options filtered by available providers.
+ */
+export function getAvailableModelOptions(): Partial<typeof MODEL_OPTIONS> {
+  const available = getAvailableProviders();
+  const options: Partial<typeof MODEL_OPTIONS> = {};
+  for (const provider of available) {
+    options[provider] = MODEL_OPTIONS[provider];
+  }
+  return options;
+}

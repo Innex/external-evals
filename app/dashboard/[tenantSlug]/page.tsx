@@ -1,6 +1,6 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { count, eq } from "drizzle-orm";
-import { AlertCircle, ArrowRight, FileText, MessageSquare, Sparkles } from "lucide-react";
+import { ArrowRight, FileText, MessageSquare, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -66,31 +66,8 @@ export default async function TenantDashboardPage({ params }: TenantDashboardPag
   // We could fetch counts via BTQL here if needed, but for now we'll show
   // a simpler dashboard that links to the conversations page.
 
-  const hasApiKey = tenant.openaiApiKey || tenant.anthropicApiKey || tenant.googleApiKey;
-
   return (
     <div className="container space-y-8 px-6 py-8">
-      {!hasApiKey && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-500/20 bg-amber-500/10 p-4">
-          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
-          <div>
-            <p className="font-medium text-amber-700 dark:text-amber-400">
-              API key required
-            </p>
-            <p className="text-sm text-amber-600 dark:text-amber-500">
-              Add your AI provider API key in{" "}
-              <Link
-                href={`/dashboard/${tenant.slug}/settings`}
-                className="underline hover:no-underline"
-              >
-                settings
-              </Link>{" "}
-              to enable the chat widget.
-            </p>
-          </div>
-        </div>
-      )}
-
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold">{tenant.name}</h1>

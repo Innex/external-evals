@@ -1,12 +1,12 @@
-import { currentUser } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 
 import { CreateTenantForm } from "./create-tenant-form";
 
 export default async function NewTenantPage() {
-  const user = await currentUser();
+  const { userId } = await auth();
 
-  if (!user) {
+  if (!userId) {
     redirect("/sign-in");
   }
 
@@ -19,7 +19,7 @@ export default async function NewTenantPage() {
             Set up a new AI-powered support bot for your customers
           </p>
         </div>
-        <CreateTenantForm userId={user.id} />
+        <CreateTenantForm />
       </div>
     </div>
   );

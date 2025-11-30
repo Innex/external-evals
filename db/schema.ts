@@ -113,17 +113,13 @@ export const tenants = pgTable("tenants", {
     .notNull(),
 
   // AI Configuration
+  // Note: API keys are platform-level (env vars), not per-tenant
   instructions: text("instructions")
     .default("You are a helpful customer support assistant.")
     .notNull(),
   modelProvider: modelProviderEnum("model_provider").default("openai").notNull(),
   modelName: text("model_name").default("gpt-5-mini").notNull(),
   temperature: real("temperature").default(0.7).notNull(),
-
-  // API Keys (should be encrypted in production)
-  openaiApiKey: text("openai_api_key"),
-  anthropicApiKey: text("anthropic_api_key"),
-  googleApiKey: text("google_api_key"),
 
   // Widget settings
   widgetPosition: widgetPositionEnum("widget_position").default("bottom_right").notNull(),

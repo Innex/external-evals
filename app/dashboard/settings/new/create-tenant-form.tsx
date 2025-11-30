@@ -1,8 +1,8 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -22,36 +22,72 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { MODEL_OPTIONS } from "@/lib/ai/providers";
 import { slugify } from "@/lib/utils";
 
-interface CreateTenantFormProps {
-  userId: string;
+type ModelProvider = "openai" | "anthropic" | "google";
+
+interface ProviderConfig {
+  providers: ModelProvider[];
+  modelOptions: Record<string, { value: string; label: string }[]>;
 }
 
-export function CreateTenantForm({ userId }: CreateTenantFormProps) {
+const PROVIDER_LABELS: Record<ModelProvider, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  google: "Google AI",
+};
+
+export function CreateTenantForm() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+  const [providerConfig, setProviderConfig] = useState<ProviderConfig | null>(null);
+
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
-  const [modelProvider, setModelProvider] = useState<"openai" | "anthropic" | "google">(
-    "openai",
-  );
-  const [modelName, setModelName] = useState("gpt-5-mini");
+  const [modelProvider, setModelProvider] = useState<ModelProvider | "">("");
+  const [modelName, setModelName] = useState("");
   const [instructions, setInstructions] = useState(
     "You are a helpful customer support assistant. Be friendly, concise, and helpful. If you don't know something, say so.",
   );
-  const [apiKey, setApiKey] = useState("");
+
+  // Fetch available providers on mount
+  useEffect(() => {
+    async function fetchConfig() {
+      try {
+        const response = await fetch("/api/config/providers");
+        if (response.ok) {
+          const config = (await response.json()) as ProviderConfig;
+          setProviderConfig(config);
+
+          // Set defaults if providers are available
+          if (config.providers.length > 0) {
+            const defaultProvider = config.providers[0];
+            setModelProvider(defaultProvider);
+            if (config.modelOptions[defaultProvider]?.length > 0) {
+              setModelName(config.modelOptions[defaultProvider][0].value);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch provider config:", error);
+      } finally {
+        setIsLoadingConfig(false);
+      }
+    }
+    fetchConfig();
+  }, []);
 
   const handleNameChange = (value: string) => {
     setName(value);
     setSlug(slugify(value));
   };
 
-  const handleProviderChange = (value: "openai" | "anthropic" | "google") => {
+  const handleProviderChange = (value: ModelProvider) => {
     setModelProvider(value);
-    setModelName(MODEL_OPTIONS[value][0].value);
-    setApiKey("");
+    if (providerConfig?.modelOptions[value]?.length) {
+      setModelName(providerConfig.modelOptions[value][0].value);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -68,8 +104,6 @@ export function CreateTenantForm({ userId }: CreateTenantFormProps) {
           modelProvider,
           modelName,
           instructions,
-          apiKey,
-          userId,
         }),
       });
 
@@ -78,7 +112,8 @@ export function CreateTenantForm({ userId }: CreateTenantFormProps) {
         throw new Error(error.message || "Failed to create bot");
       }
 
-      router.push("/dashboard");
+      const tenant = await response.json();
+      router.push(`/dashboard/${tenant.slug}`);
       router.refresh();
     } catch (error) {
       console.error("Error creating tenant:", error);
@@ -87,6 +122,34 @@ export function CreateTenantForm({ userId }: CreateTenantFormProps) {
       setIsLoading(false);
     }
   };
+
+  if (isLoadingConfig) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!providerConfig || providerConfig.providers.length === 0) {
+    return (
+      <Card className="border-amber-500/50">
+        <CardContent className="flex items-start gap-3 py-6">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+          <div>
+            <p className="font-medium text-amber-700 dark:text-amber-400">
+              No AI providers configured
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The platform administrator needs to configure at least one AI provider API
+              key (OPENAI_API_KEY, ANTHROPIC_API_KEY, or GOOGLE_API_KEY) before you can
+              create a bot.
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -131,14 +194,19 @@ export function CreateTenantForm({ userId }: CreateTenantFormProps) {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="provider">AI provider</Label>
-              <Select value={modelProvider} onValueChange={handleProviderChange}>
+              <Select
+                value={modelProvider}
+                onValueChange={(v) => handleProviderChange(v as ModelProvider)}
+              >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Select provider" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="openai">OpenAI</SelectItem>
-                  <SelectItem value="anthropic">Anthropic</SelectItem>
-                  <SelectItem value="google">Google AI</SelectItem>
+                  {providerConfig.providers.map((provider) => (
+                    <SelectItem key={provider} value={provider}>
+                      {PROVIDER_LABELS[provider]}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -146,41 +214,18 @@ export function CreateTenantForm({ userId }: CreateTenantFormProps) {
               <Label htmlFor="model">Model</Label>
               <Select value={modelName} onValueChange={setModelName}>
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="Select model" />
                 </SelectTrigger>
                 <SelectContent>
-                  {MODEL_OPTIONS[modelProvider].map((model) => (
-                    <SelectItem key={model.value} value={model.value}>
-                      {model.label}
-                    </SelectItem>
-                  ))}
+                  {modelProvider &&
+                    providerConfig.modelOptions[modelProvider]?.map((model) => (
+                      <SelectItem key={model.value} value={model.value}>
+                        {model.label}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="apiKey">
-              {modelProvider === "openai" && "OpenAI API key"}
-              {modelProvider === "anthropic" && "Anthropic API key"}
-              {modelProvider === "google" && "Google AI API key"}
-            </Label>
-            <Input
-              id="apiKey"
-              type="password"
-              placeholder={
-                modelProvider === "openai"
-                  ? "sk-..."
-                  : modelProvider === "anthropic"
-                    ? "sk-ant-..."
-                    : "AI..."
-              }
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              required
-            />
-            <p className="text-xs text-muted-foreground">
-              Your API key is stored securely and used only for your bot.
-            </p>
           </div>
         </CardContent>
       </Card>
@@ -212,7 +257,7 @@ export function CreateTenantForm({ userId }: CreateTenantFormProps) {
         >
           Cancel
         </Button>
-        <Button type="submit" disabled={isLoading}>
+        <Button type="submit" disabled={isLoading || !modelProvider || !modelName}>
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

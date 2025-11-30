@@ -17,9 +17,6 @@ const updateTenantSchema = z.object({
   primaryColor: z.string().optional(),
   accentColor: z.string().optional(),
   widgetEnabled: z.boolean().optional(),
-  openaiApiKey: z.string().optional(),
-  anthropicApiKey: z.string().optional(),
-  googleApiKey: z.string().optional(),
 });
 
 export async function PATCH(

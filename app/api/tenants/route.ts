@@ -1,11 +1,11 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
-import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/db";
 import { tenantMembers, tenants, users } from "@/db/schema";
+import { getAvailableProviders } from "@/lib/ai/providers";
 
 const createTenantSchema = z.object({
   name: z.string().min(1).max(100),
@@ -17,7 +17,6 @@ const createTenantSchema = z.object({
   modelProvider: z.enum(["openai", "anthropic", "google"]),
   modelName: z.string(),
   instructions: z.string().min(1),
-  apiKey: z.string().min(1),
 });
 
 export async function POST(request: Request): Promise<Response> {
@@ -68,12 +67,14 @@ export async function POST(request: Request): Promise<Response> {
       );
     }
 
-    // Create tenant with API key based on provider
-    const apiKeyField = {
-      openai: { openaiApiKey: data.apiKey },
-      anthropic: { anthropicApiKey: data.apiKey },
-      google: { googleApiKey: data.apiKey },
-    }[data.modelProvider];
+    // Verify the selected provider is available (has API key configured)
+    const availableProviders = getAvailableProviders();
+    if (!availableProviders.includes(data.modelProvider)) {
+      return NextResponse.json(
+        { message: `Provider ${data.modelProvider} is not configured on this platform` },
+        { status: 400 },
+      );
+    }
 
     const [tenant] = await db
       .insert(tenants)
@@ -83,7 +84,6 @@ export async function POST(request: Request): Promise<Response> {
         modelProvider: data.modelProvider,
         modelName: data.modelName,
         instructions: data.instructions,
-        ...apiKeyField,
       })
       .returning();
 
@@ -94,11 +94,7 @@ export async function POST(request: Request): Promise<Response> {
       role: "owner",
     });
 
-    cookies().set("activeTenantId", tenant.id, {
-      path: "/",
-      maxAge: 60 * 60 * 24 * 365,
-    });
-
+    // Return tenant - client will redirect to /dashboard/[slug]
     return NextResponse.json(tenant, { status: 201 });
   } catch (error) {
     console.error("Error creating tenant:", error);
