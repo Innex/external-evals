@@ -53,7 +53,6 @@ export async function runEvaluation(params: RunEvalParams): Promise<EvalSummary>
 
   // Initialize the dataset with _internal_btql filter for our Postgres dataset_id
   // This filters records at the Braintrust level
-  // @ts-expect-error - Braintrust SDK doesn't expose _internal_btql in types
   const dataset = initDataset({
     project: projectName,
     dataset: DATASET_NAME,

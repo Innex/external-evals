@@ -108,7 +108,7 @@ export default async function EvalsPage({ params }: EvalsPageProps) {
                       </p>
                     </div>
                   </div>
-                  {evalRun.summary && (
+                  {Boolean(evalRun.summary) && (
                     <div className="mt-3 border-t pt-3">
                       <div className="grid grid-cols-3 gap-4 text-sm">
                         <SummaryDisplay

@@ -98,7 +98,7 @@ export default async function EvalDetailPage({
         </Card>
       )}
 
-      {evalRecord.status === "failed" && evalRecord.results && (
+      {evalRecord.status === "failed" && Boolean(evalRecord.results) && (
         <Card className="border-rose-500/50">
           <CardContent className="py-6">
             <div className="flex items-start gap-3">

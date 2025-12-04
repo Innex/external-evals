@@ -55,7 +55,7 @@ export async function POST(request: Request): Promise<Response> {
     const chunks = chunkText(data.content);
 
     // Generate embeddings for all chunks
-    const apiKey = tenant?.openaiApiKey ?? process.env.OPENAI_API_KEY;
+    const apiKey = process.env.OPENAI_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(

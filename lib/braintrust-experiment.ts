@@ -14,6 +14,7 @@ export interface ExperimentSummary {
   rows: ExperimentRow[];
   totalRows: number;
   avgScores: Record<string, number>;
+  passRate: number;
 }
 
 export async function fetchExperimentResults(
@@ -60,9 +61,17 @@ export async function fetchExperimentResults(
     }
   }
 
+  // Calculate pass rate (rows where all scores >= 0.5)
+  const passCount = rows.filter((row) => {
+    if (!row.scores) return false;
+    return Object.values(row.scores).every((score) => score >= 0.5);
+  }).length;
+  const passRate = rows.length > 0 ? passCount / rows.length : 0;
+
   return {
     rows,
     totalRows: rows.length,
     avgScores,
+    passRate,
   };
 }

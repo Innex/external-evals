@@ -112,7 +112,6 @@ export async function fetchDatasetRecords(params: {
 
   const projectName = process.env.BRAINTRUST_PROJECT_NAME || "customer-support-platform";
 
-  // @ts-expect-error - Braintrust SDK doesn't expose _internal_btql
   const dataset = initDataset({
     project: projectName,
     dataset: DATASET_NAME,

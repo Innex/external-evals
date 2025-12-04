@@ -20,7 +20,7 @@ interface DatasetDetailPageProps {
 
 export default async function DatasetDetailPage({
   params,
-}: DatasetDetailPageProps): Promise<JSX.Element> {
+}: DatasetDetailPageProps): Promise<React.JSX.Element> {
   const { tenantSlug, id: datasetId } = await params;
   const user = await currentUser();
 

@@ -49,7 +49,7 @@ function formatExpected(expected: unknown): string {
 export function DatasetRecordCard({
   record,
   datasetId,
-}: DatasetRecordCardProps): JSX.Element {
+}: DatasetRecordCardProps): React.JSX.Element {
   const [isInputExpanded, setIsInputExpanded] = useState(false);
   const [isOutputExpanded, setIsOutputExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);

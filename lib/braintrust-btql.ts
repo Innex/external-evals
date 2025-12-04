@@ -41,7 +41,7 @@ async function ensureBraintrustState(): Promise<BraintrustState> {
   const projectId = project.id;
 
   // Derive the API URL from the SDK's global state
-  const apiUrl = _internalGetGlobalState().apiUrl;
+  const apiUrl = _internalGetGlobalState().apiUrl ?? "https://api.braintrust.dev";
 
   cachedState = { apiUrl, projectId };
   return cachedState;

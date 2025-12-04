@@ -89,9 +89,9 @@ export const MODEL_OPTIONS = {
 /**
  * Get model options filtered by available providers.
  */
-export function getAvailableModelOptions(): Partial<typeof MODEL_OPTIONS> {
+export function getAvailableModelOptions() {
   const available = getAvailableProviders();
-  const options: Partial<typeof MODEL_OPTIONS> = {};
+  const options: Record<string, readonly { value: string; label: string }[]> = {};
   for (const provider of available) {
     options[provider] = MODEL_OPTIONS[provider];
   }

@@ -13,7 +13,7 @@ interface DashboardTenantLayoutProps {
 export default async function DashboardTenantLayout({
   children,
   params,
-}: DashboardTenantLayoutProps): Promise<JSX.Element> {
+}: DashboardTenantLayoutProps): Promise<React.JSX.Element> {
   // Use auth() instead of currentUser() - it's cached and doesn't count against rate limits
   const { userId } = await auth();
   if (!userId) {

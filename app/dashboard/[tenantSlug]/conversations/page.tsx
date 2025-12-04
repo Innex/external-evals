@@ -26,7 +26,7 @@ interface ConversationsPageProps {
 
 export default async function ConversationsPage({
   params,
-}: ConversationsPageProps): Promise<JSX.Element> {
+}: ConversationsPageProps): Promise<React.JSX.Element> {
   const user = await currentUser();
 
   if (!user) {

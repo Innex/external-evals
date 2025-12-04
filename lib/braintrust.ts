@@ -54,5 +54,5 @@ export async function logEvent(
     {
       name: eventName,
     },
-  )();
+  );
 }

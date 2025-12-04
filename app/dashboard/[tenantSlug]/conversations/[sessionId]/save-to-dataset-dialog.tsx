@@ -52,7 +52,7 @@ export function SaveToDatasetDialog({
   conversationHistory,
   actualResponse,
   datasets,
-}: SaveToDatasetDialogProps): JSX.Element {
+}: SaveToDatasetDialogProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
   const [newDatasetName, setNewDatasetName] = useState("");

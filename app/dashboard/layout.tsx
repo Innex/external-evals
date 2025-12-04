@@ -5,7 +5,7 @@ export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
-}): Promise<JSX.Element> {
+}): Promise<React.JSX.Element> {
   // Use auth() - it's cached and doesn't count against Clerk rate limits
   const { userId } = await auth();
 

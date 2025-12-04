@@ -1,4 +1,4 @@
-import type { CoreMessage } from "ai";
+import type { CoreMessage, ToolSet } from "ai";
 import { eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
@@ -89,7 +89,7 @@ async function executeChatTurn<T>(
     runner: (args: {
       model: ReturnType<typeof getModel>;
       systemPrompt: string;
-      tools: Record<string, unknown> | undefined;
+      tools: ToolSet | undefined;
       span: Span;
     }) => Promise<T>;
   },

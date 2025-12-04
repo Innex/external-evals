@@ -38,7 +38,7 @@ interface DashboardNavProps {
 export function DashboardNav({
   tenants,
   activeTenantSlug,
-}: DashboardNavProps): JSX.Element {
+}: DashboardNavProps): React.JSX.Element {
   const pathname = usePathname();
 
   return (

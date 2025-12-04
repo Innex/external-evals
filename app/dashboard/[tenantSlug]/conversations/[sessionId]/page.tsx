@@ -47,7 +47,7 @@ function buildConversationHistory(
 
 export default async function ConversationDetailPage({
   params,
-}: ConversationDetailPageProps): Promise<JSX.Element> {
+}: ConversationDetailPageProps): Promise<React.JSX.Element> {
   const { tenantSlug, sessionId } = await params;
   const user = await currentUser();
 
