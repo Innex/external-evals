@@ -83,8 +83,14 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   // Run the evaluation in the background
   // Note: In production, you'd want to use a proper job queue
+  // Always append a unique suffix to experiment names to avoid conflicts with
+  // experiments from other projects that the SDK might try to reference as baselines
+  const uniqueExperimentName = name
+    ? `${name}-${Date.now()}`
+    : `eval-${Date.now()}`;
+
   runEvaluationAsync(evalRecord.id, {
-    experimentName: name, // Pass user-provided name as experimentName (optional)
+    experimentName: uniqueExperimentName,
     datasetId,
     tenant,
   }).catch(console.error);

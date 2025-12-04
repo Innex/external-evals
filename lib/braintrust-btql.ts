@@ -9,6 +9,8 @@ interface BraintrustState {
   projectId: string;
 }
 
+// Cache the state but only for the current process lifetime
+// This avoids issues with stale state from previous runs
 let cachedState: BraintrustState | null = null;
 
 async function ensureBraintrustState(): Promise<BraintrustState> {

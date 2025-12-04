@@ -14,12 +14,13 @@ export interface BraintrustTurn {
 interface BtqlTurnRow {
   id: string;
   created: string;
+  input?: unknown;
+  output?: unknown;
+  // BTQL flattens metadata.X fields to just X
   sessionId?: string;
   tenantId?: string;
   modelName?: string;
   modelProvider?: string;
-  input?: unknown;
-  output?: unknown;
 }
 
 const DEFAULT_TURN_LIMIT = 200;
@@ -37,22 +38,8 @@ export async function fetchBraintrustTurns(params: {
   const projectId = await getProjectId();
   const escapedTenantId = tenantId.replace(/'/g, "''");
 
-  // BTQL uses SQL-like syntax with project ID
-  const query = `
-select
-  id,
-  created,
-  input,
-  output,
-  metadata.sessionId as sessionId,
-  metadata.tenantId as tenantId,
-  metadata.modelName as modelName,
-  metadata.modelProvider as modelProvider
-from project_logs('${projectId}')
-where span_attributes.name = 'chat-turn' and metadata.tenantId = '${escapedTenantId}'
-order by created desc
-limit ${limit}
-`.trim();
+  // BTQL uses colon syntax with pipe separators
+  const query = `select: id, created, input, output, metadata.sessionId, metadata.tenantId, metadata.modelName, metadata.modelProvider | from: project_logs('${projectId}') | filter: span_attributes.name = 'chat-turn' AND metadata.tenantId = '${escapedTenantId}' | sort: created desc | limit: ${limit}`;
 
   const rows = await runBtql<BtqlTurnRow>(query);
   return rows
