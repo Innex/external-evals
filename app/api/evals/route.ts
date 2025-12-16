@@ -1,7 +1,7 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { randomUUID } from "crypto";
 import { eq } from "drizzle-orm";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { db } from "@/db";
@@ -81,19 +81,19 @@ export async function POST(request: Request): Promise<NextResponse> {
     })
     .returning();
 
-  // Run the evaluation in the background
-  // Note: In production, you'd want to use a proper job queue
   // Always append a unique suffix to experiment names to avoid conflicts with
   // experiments from other projects that the SDK might try to reference as baselines
-  const uniqueExperimentName = name
-    ? `${name}-${Date.now()}`
-    : `eval-${Date.now()}`;
+  const uniqueExperimentName = name ? `${name}-${Date.now()}` : `eval-${Date.now()}`;
 
-  runEvaluationAsync(evalRecord.id, {
-    experimentName: uniqueExperimentName,
-    datasetId,
-    tenant,
-  }).catch(console.error);
+  // Use Next.js after() to run the evaluation after the response is sent
+  // This ensures the background task completes even on serverless platforms like Vercel
+  after(async () => {
+    await runEvaluationAsync(evalRecord.id, {
+      experimentName: uniqueExperimentName,
+      datasetId,
+      tenant,
+    });
+  });
 
   return NextResponse.json({ eval: evalRecord }, { status: 201 });
 }
