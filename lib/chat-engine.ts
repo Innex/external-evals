@@ -47,7 +47,7 @@ async function getRelevantContext(
       .orderBy(sql`${documentChunks.embedding} <=> ${embeddingStr}::vector`)
       .limit(5);
 
-    const relevant = similarChunks.filter((chunk) => chunk.similarity > 0.45);
+    const relevant = similarChunks.filter((chunk) => chunk.similarity > 0.3);
 
     if (relevant.length === 0) {
       return "";
