@@ -7,7 +7,7 @@ import type { tenants } from "@/db/schema";
 import { documentChunks, documents } from "@/db/schema";
 import { getEmbedding } from "@/lib/ai/embeddings";
 import { getModel } from "@/lib/ai/providers";
-import { getWrappedAI, traced } from "@/lib/braintrust";
+import { getWrappedAI, traced, updateSessionSpan } from "@/lib/braintrust";
 
 const { streamText, generateText } = getWrappedAI();
 
@@ -93,6 +93,8 @@ async function executeChatTurn<T>(
       systemPrompt: string;
       tools: ToolSet | undefined;
       span: Span;
+      userInput: string;
+      parentSpan: string | undefined;
     }) => Promise<T>;
   },
 ): Promise<T> {
@@ -102,10 +104,20 @@ async function executeChatTurn<T>(
     .reverse()
     .find((message) => message.role === "user");
 
-  const userInput =
-    lastUserMessage && typeof lastUserMessage.content === "string"
-      ? lastUserMessage.content
-      : "";
+  // Extract user input - handle both string and array content formats
+  let userInput = "";
+  if (lastUserMessage) {
+    if (typeof lastUserMessage.content === "string") {
+      userInput = lastUserMessage.content;
+    } else if (Array.isArray(lastUserMessage.content)) {
+      const textPart = lastUserMessage.content.find(
+        (part) => "text" in part && typeof part.text === "string",
+      );
+      if (textPart && "text" in textPart) {
+        userInput = textPart.text;
+      }
+    }
+  }
 
   const spanMetadata = {
     sessionId: sessionId ?? `session-${tenant.id}-${Date.now()}`,
@@ -160,7 +172,14 @@ async function executeChatTurn<T>(
       );
 
       const model = getModel(tenant);
-      const result = await runner({ model, systemPrompt, tools, span });
+      const result = await runner({
+        model,
+        systemPrompt,
+        tools,
+        span,
+        userInput,
+        parentSpan,
+      });
 
       return result;
     },
@@ -179,7 +198,7 @@ export async function streamChatTurn(options: ChatTurnOptions) {
 
   return executeChatTurn({
     ...options,
-    runner: async ({ model, systemPrompt, tools, span }) => {
+    runner: async ({ model, systemPrompt, tools, span, userInput, parentSpan }) => {
       return streamText({
         model,
         system: systemPrompt,
@@ -190,6 +209,8 @@ export async function streamChatTurn(options: ChatTurnOptions) {
         experimental_toolCallStreaming: true,
         onFinish: async ({ text }: { text: string }) => {
           span.log({ output: text });
+          // Update the root conversation span with latest input/output
+          updateSessionSpan(parentSpan, userInput, text);
         },
       });
     },
@@ -201,7 +222,7 @@ export async function completeChatTurn(options: ChatTurnOptions): Promise<string
 
   const result = await executeChatTurn({
     ...options,
-    runner: async ({ model, systemPrompt, tools, span }) => {
+    runner: async ({ model, systemPrompt, tools, span, userInput, parentSpan }) => {
       const completion = await generateText({
         model,
         system: systemPrompt,
@@ -212,6 +233,8 @@ export async function completeChatTurn(options: ChatTurnOptions): Promise<string
       });
 
       span.log({ output: completion.text });
+      // Update the root conversation span with latest input/output
+      updateSessionSpan(parentSpan, userInput, completion.text);
 
       return completion.text;
     },

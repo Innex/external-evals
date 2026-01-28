@@ -1,5 +1,5 @@
 import * as ai from "ai";
-import { initLogger, type Span, traced, wrapAISDK } from "braintrust";
+import { initLogger, type Span, traced, updateSpan, wrapAISDK } from "braintrust";
 
 // Re-export Span type for consumers
 export type { Span };
@@ -76,6 +76,24 @@ export function startSessionSpan(
 export async function exportSpan(span: Span | null): Promise<string | null> {
   if (!span) return null;
   return span.export();
+}
+
+/**
+ * Update a session span with the latest input/output from a conversation turn.
+ * This keeps the root "conversation" span populated with current values in the UI.
+ *
+ * @param exported - The exported span string (from exportSpan)
+ * @param input - The latest user message
+ * @param output - The latest assistant response
+ */
+export function updateSessionSpan(
+  exported: string | undefined,
+  input: string,
+  output: string,
+): void {
+  if (!exported) return;
+  initBraintrust();
+  updateSpan({ exported, input, output });
 }
 
 // Helper to create tenant-specific metadata for traces
