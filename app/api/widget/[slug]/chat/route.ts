@@ -1,3 +1,4 @@
+import { Redis } from "@upstash/redis";
 import { type CoreMessage } from "ai";
 import { eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
@@ -8,32 +9,20 @@ import { exportSpan, startSessionSpan } from "@/lib/braintrust";
 import { streamChatTurn } from "@/lib/chat-engine";
 
 /**
- * In-memory cache for session spans.
- * Maps sessionId -> exported span string
+ * Upstash Redis client for session span storage.
+ * Uses REST API which works well with Vercel serverless functions.
  *
- * NOTE: For production with multiple server instances, use Redis or similar:
- *   const redis = new Redis(process.env.REDIS_URL);
- *   await redis.set(`session-span:${sessionId}`, exportedSpan, 'EX', 86400);
- *   const parentSpan = await redis.get(`session-span:${sessionId}`);
+ * Required env vars (auto-configured by Vercel when you add Upstash):
+ *   - KV_REST_API_URL (or UPSTASH_REDIS_REST_URL)
+ *   - KV_REST_API_TOKEN (or UPSTASH_REDIS_REST_TOKEN)
  */
-const sessionSpanCache = new Map<string, string>();
+const redis = new Redis({
+  url: process.env.KV_REST_API_URL!,
+  token: process.env.KV_REST_API_TOKEN!,
+});
 
-// Clean up old sessions periodically (simple TTL implementation)
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const sessionTimestamps = new Map<string, number>();
-
-function cleanupOldSessions() {
-  const now = Date.now();
-  for (const [sessionId, timestamp] of sessionTimestamps.entries()) {
-    if (now - timestamp > SESSION_TTL_MS) {
-      sessionSpanCache.delete(sessionId);
-      sessionTimestamps.delete(sessionId);
-    }
-  }
-}
-
-// Run cleanup every hour
-setInterval(cleanupOldSessions, 60 * 60 * 1000);
+// Session span TTL in seconds (24 hours)
+const SESSION_TTL_SECONDS = 24 * 60 * 60;
 
 export async function POST(
   request: NextRequest,
@@ -61,8 +50,9 @@ export async function POST(
       return new Response("Widget is disabled", { status: 403 });
     }
 
-    // Get or create session-level parent span
-    let parentSpan = sessionSpanCache.get(sessionId);
+    // Get or create session-level parent span from Redis
+    const cacheKey = `session-span:${sessionId}`;
+    let parentSpan = await redis.get<string>(cacheKey);
 
     if (!parentSpan) {
       // First message in this session - create the root "conversation" span
@@ -77,13 +67,10 @@ export async function POST(
         const exported = await exportSpan(rootSpan);
         if (exported) {
           parentSpan = exported;
-          sessionSpanCache.set(sessionId, exported);
-          sessionTimestamps.set(sessionId, Date.now());
+          // Store in Redis with TTL
+          await redis.set(cacheKey, exported, { ex: SESSION_TTL_SECONDS });
         }
       }
-    } else {
-      // Update timestamp to keep session alive
-      sessionTimestamps.set(sessionId, Date.now());
     }
 
     const result = await streamChatTurn({
