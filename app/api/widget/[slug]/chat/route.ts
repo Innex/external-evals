@@ -21,8 +21,8 @@ const redis = new Redis({
   token: process.env.KV_REST_API_TOKEN!,
 });
 
-// Session span TTL in seconds (24 hours)
-const SESSION_TTL_SECONDS = 24 * 60 * 60;
+// Session span TTL in seconds (30 minutes - suitable for demos)
+const SESSION_TTL_SECONDS = 30 * 60;
 
 export async function POST(
   request: NextRequest,

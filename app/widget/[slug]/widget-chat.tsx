@@ -1,7 +1,7 @@
 "use client";
 
 import { useChat } from "ai/react";
-import { Bot, Loader2, Minimize2, Send, User } from "lucide-react";
+import { Bot, Loader2, Minimize2, RefreshCw, Send, User } from "lucide-react";
 import { nanoid } from "nanoid";
 import { useEffect, useRef, useState } from "react";
 
@@ -25,7 +25,7 @@ interface WidgetChatProps {
 }
 
 export function WidgetChat({ tenant, embedded = false }: WidgetChatProps) {
-  const [sessionId] = useState(() =>
+  const [sessionId, setSessionId] = useState(() =>
     typeof window !== "undefined"
       ? localStorage.getItem(`session-${tenant.slug}`) || nanoid()
       : nanoid(),
@@ -40,17 +40,34 @@ export function WidgetChat({ tenant, embedded = false }: WidgetChatProps) {
     }
   }, [sessionId, tenant.slug]);
 
-  const { messages, input, handleInputChange, handleSubmit, isLoading } = useChat({
-    api: `/api/widget/${tenant.slug}/chat`,
-    body: { sessionId },
-    initialMessages: [
+  const { messages, input, handleInputChange, handleSubmit, isLoading, setMessages } =
+    useChat({
+      api: `/api/widget/${tenant.slug}/chat`,
+      body: { sessionId },
+      initialMessages: [
+        {
+          id: "welcome",
+          role: "assistant",
+          content: tenant.welcomeMessage,
+        },
+      ],
+    });
+
+  // Start a new conversation with fresh session
+  const handleNewConversation = () => {
+    const newSessionId = nanoid();
+    setSessionId(newSessionId);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`session-${tenant.slug}`, newSessionId);
+    }
+    setMessages([
       {
         id: "welcome",
         role: "assistant",
         content: tenant.welcomeMessage,
       },
-    ],
-  });
+    ]);
+  };
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -104,16 +121,27 @@ export function WidgetChat({ tenant, embedded = false }: WidgetChatProps) {
             <p className="text-xs opacity-80">AI Support</p>
           </div>
         </div>
-        {embedded && (
+        <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="icon"
             className="text-white hover:bg-white/20"
-            onClick={() => setIsMinimized(true)}
+            onClick={handleNewConversation}
+            title="New conversation"
           >
-            <Minimize2 className="h-4 w-4" />
+            <RefreshCw className="h-4 w-4" />
           </Button>
-        )}
+          {embedded && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-white hover:bg-white/20"
+              onClick={() => setIsMinimized(true)}
+            >
+              <Minimize2 className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Messages */}
