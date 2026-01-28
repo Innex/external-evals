@@ -18,6 +18,8 @@ interface ChatTurnOptions {
   messages: CoreMessage[];
   sessionId?: string;
   spanName?: string;
+  /** Exported parent span string for session-level trace grouping */
+  parentSpan?: string;
 }
 
 interface Span {
@@ -94,7 +96,7 @@ async function executeChatTurn<T>(
     }) => Promise<T>;
   },
 ): Promise<T> {
-  const { tenant, messages, sessionId, spanName, runner } = options;
+  const { tenant, messages, sessionId, spanName, parentSpan, runner } = options;
 
   const lastUserMessage = [...messages]
     .reverse()
@@ -164,10 +166,14 @@ async function executeChatTurn<T>(
     },
     {
       name: spanName ?? "chat-turn",
+      // Link this span to the session's root span if provided
+      ...(parentSpan ? { parent: parentSpan } : {}),
     },
   );
 }
 
+// Return type is inferred from streamText - complex generic type from AI SDK
+// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
 export async function streamChatTurn(options: ChatTurnOptions) {
   const { tenant, messages } = options;
 
