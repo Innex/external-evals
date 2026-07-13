@@ -8,21 +8,62 @@ import { tenants } from "@/db/schema";
 import { exportSpan, startSessionSpan } from "@/lib/braintrust";
 import { streamChatTurn } from "@/lib/chat-engine";
 
-/**
- * Upstash Redis client for session span storage.
- * Uses REST API which works well with Vercel serverless functions.
- *
- * Required env vars (auto-configured by Vercel when you add Upstash):
- *   - KV_REST_API_URL (or UPSTASH_REDIS_REST_URL)
- *   - KV_REST_API_TOKEN (or UPSTASH_REDIS_REST_TOKEN)
- */
-const redis = new Redis({
-  url: process.env.KV_REST_API_URL!,
-  token: process.env.KV_REST_API_TOKEN!,
-});
-
 // Session span TTL in seconds (30 minutes - suitable for demos)
 const SESSION_TTL_SECONDS = 30 * 60;
+const localSessionSpans = new Map<string, { exported: string; expiresAt: number }>();
+let redis: Redis | null | undefined;
+
+function getRedis(): Redis | null {
+  if (redis !== undefined) {
+    return redis;
+  }
+
+  const url = process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN ?? process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  redis = url && token ? new Redis({ url, token }) : null;
+  return redis;
+}
+
+async function getCachedSessionSpan(cacheKey: string): Promise<string | null> {
+  const redisClient = getRedis();
+  if (redisClient) {
+    try {
+      return await redisClient.get<string>(cacheKey);
+    } catch (error) {
+      console.warn("Redis session cache read failed; using local cache", error);
+    }
+  }
+
+  const cached = localSessionSpans.get(cacheKey);
+  if (!cached) {
+    return null;
+  }
+
+  if (cached.expiresAt <= Date.now()) {
+    localSessionSpans.delete(cacheKey);
+    return null;
+  }
+
+  return cached.exported;
+}
+
+async function cacheSessionSpan(cacheKey: string, exported: string): Promise<void> {
+  const redisClient = getRedis();
+  if (redisClient) {
+    try {
+      await redisClient.set(cacheKey, exported, { ex: SESSION_TTL_SECONDS });
+      return;
+    } catch (error) {
+      console.warn("Redis session cache write failed; using local cache", error);
+    }
+  }
+
+  localSessionSpans.set(cacheKey, {
+    exported,
+    expiresAt: Date.now() + SESSION_TTL_SECONDS * 1000,
+  });
+}
 
 export async function POST(
   request: NextRequest,
@@ -50,9 +91,10 @@ export async function POST(
       return new Response("Widget is disabled", { status: 403 });
     }
 
-    // Get or create session-level parent span from Redis
+    // Get or create session-level parent span from Redis, falling back to
+    // per-instance memory when no Redis store is configured.
     const cacheKey = `session-span:${sessionId}`;
-    let parentSpan = await redis.get<string>(cacheKey);
+    let parentSpan = await getCachedSessionSpan(cacheKey);
 
     if (!parentSpan) {
       // First message in this session - create the root "conversation" span
@@ -67,8 +109,7 @@ export async function POST(
         const exported = await exportSpan(rootSpan);
         if (exported) {
           parentSpan = exported;
-          // Store in Redis with TTL
-          await redis.set(cacheKey, exported, { ex: SESSION_TTL_SECONDS });
+          await cacheSessionSpan(cacheKey, exported);
         }
       }
     }
